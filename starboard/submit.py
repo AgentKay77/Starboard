@@ -1,9 +1,4 @@
-"""Submission blueprint. Admin-only at launch; gated by ENABLE_USER_SUBMISSIONS.
-
-When the flag is on, an authenticated user with a claimed player can
-submit times for that player only. Admins can always submit on behalf of
-any active player.
-"""
+"""Submission blueprint. Admin-only at launch; gated by ENABLE_USER_SUBMISSIONS."""
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
@@ -74,9 +69,10 @@ def submit():
     )
 
 
-def _handle_post(conn, today, earliest, players):
+def _handle_post(conn, today, earliest, _players):
     raw_date = (request.form.get("date") or "").strip()
     raw_pid = request.form.get("player_id")
+    raw_status = (request.form.get("status") or "completed").strip()
     raw_time = (request.form.get("time") or "").strip()
 
     try:
@@ -102,16 +98,23 @@ def _handle_post(conn, today, earliest, players):
     if not _can_submit_for(pid):
         abort(403)
 
-    try:
-        seconds = queries.parse_time(raw_time)
-    except ValueError as e:
-        flash(f"Couldn't read that time: {e}.", "error")
-        return redirect(url_for("submit.submit"))
-    if seconds <= 0:
-        flash("Time must be positive.", "error")
+    if raw_status not in ("completed", "dnf"):
+        flash("Invalid submission status.", "error")
         return redirect(url_for("submit.submit"))
 
-    # Make sure puzzle_day exists (auto-create)
+    seconds: float | None
+    if raw_status == "dnf":
+        seconds = None
+    else:
+        try:
+            seconds = queries.parse_time(raw_time)
+        except ValueError as e:
+            flash(f"Couldn't read that time: {e}.", "error")
+            return redirect(url_for("submit.submit"))
+        if seconds <= 0:
+            flash("Time must be positive.", "error")
+            return redirect(url_for("submit.submit"))
+
     day_row = conn.execute(
         "SELECT id FROM puzzle_days WHERE date = ?", (the_date.isoformat(),)
     ).fetchone()
@@ -130,22 +133,26 @@ def _handle_post(conn, today, earliest, players):
     ).fetchone()
     if existing:
         conn.execute(
-            """UPDATE submissions SET time_seconds = ?, submitted_at = ?,
-               submitted_by_user_id = ? WHERE id = ?""",
-            (seconds, now, current_user.id, existing["id"]),
+            """UPDATE submissions SET time_seconds = ?, status = ?,
+               submitted_at = ?, submitted_by_user_id = ? WHERE id = ?""",
+            (seconds, raw_status, now, current_user.id, existing["id"]),
         )
     else:
         conn.execute(
             """INSERT INTO submissions
-                   (player_id, day_id, time_seconds, submitted_at, submitted_by_user_id)
-               VALUES (?, ?, ?, ?, ?)""",
-            (pid, day_id, seconds, now, current_user.id),
+                   (player_id, day_id, time_seconds, status, submitted_at,
+                    submitted_by_user_id)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (pid, day_id, seconds, raw_status, now, current_user.id),
         )
     conn.commit()
     apr.recompute_all_ratings(conn)
-    flash(
-        f"Recorded {queries.format_time(seconds)} for "
-        f"{the_date.isoformat()}.",
-        "success",
-    )
+
+    if raw_status == "dnf":
+        flash(f"Logged a DNF for {the_date.isoformat()}.", "info")
+    else:
+        flash(
+            f"Recorded {queries.format_time(seconds)} for {the_date.isoformat()}.",
+            "success",
+        )
     return redirect(url_for("public.player_view", player_id=pid))

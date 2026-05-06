@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Recompute week · Admin{% endblock %}
+{% block content %}
+
+<div class="max-w-md mx-auto scoreboard p-6">
+  <h1 class="font-display text-2xl tracking-wider uppercase mb-2">Recompute week's awards</h1>
+  <p class="text-slate-400 text-sm mb-5">
+    This will re-derive the five Skirmish awards for the week of
+    <strong class="text-white numeral">{{ week_start }}</strong> from
+    current submissions and APR ratings. Existing locked rows for that
+    week will be replaced.
+  </p>
+  <form method="post" action="{{ url_for('admin.recompute_one_week') }}" class="flex gap-2">
+    <input type="hidden" name="week_start" value="{{ week_start }}" />
+    <button type="submit" class="flex-1 bg-accent hover:bg-red-700 text-white font-display tracking-widest uppercase py-2.5 rounded">
+      Recompute
+    </button>
+    <a href="{{ url_for('admin.index') }}" class="px-4 py-2 text-slate-400 hover:text-white text-sm">Cancel</a>
+  </form>
+</div>
+
+{% endblock %}

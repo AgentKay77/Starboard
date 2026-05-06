@@ -1,62 +1,86 @@
 """Adjusted Performance Rating: long-term skill snapshot.
 
-Generalization of FIDE's Tournament Performance Rating to time-based events.
-Per-day update is rating-aware (so cherry-picking weak fields can't inflate)
-and attendance-blind (missing days never costs rating).
+Three statuses contribute to APR each day, in increasing order of pain:
+
+    completed → actual z, clamped at DNF_FLOOR if abysmal
+    dnf       → actual z forced to DNF_FLOOR
+    absent    → actual z forced to ABSENT_FLOOR (worse than DNF)
+
+The clamp removes the "should I just DNF?" cliff: any completed time
+worse than DNF_FLOOR is treated as DNF for rating purposes. The
+absent-vs-DNF gap rewards engagement: DNFing is strictly cheaper than
+ghosting.
+
+After per-player deltas are computed, a zero-sum redistribution kicks
+in — total rating across all participants on the day is conserved.
+Practical consequence: the people who show up gain the rating that the
+ghosters and DNFers lose, on top of their normal performance delta.
+Without this, any non-trivial absence rate would deflate the league
+toward zero over seasons.
 """
 from __future__ import annotations
 
 import math
 import sqlite3
-from typing import Iterable
 
 INITIAL_RATING = 1500.0
 K = 22.0
 RATING_PER_SIGMA = 400.0
 
+# How bad can a single day get for rating purposes?
+DNF_FLOOR = -2.0
+ABSENT_FLOOR = -2.25
+
 
 def compute_apr_update(
-    submissions: list[tuple[int, float]],
+    completed: list[tuple[int, float]],
+    dnfs: list[int],
+    absentees: list[int],
     current_ratings: dict[int, float],
 ) -> tuple[dict[int, float], list[dict]]:
-    """Compute one day's APR update.
+    """Compute one day's APR update across all three player statuses.
 
-    submissions: [(player_id, time_seconds), ...] for that day's submitters only.
-    current_ratings: {player_id: rating} known *before* this day. Submitters
-        not in the dict are treated as new and seeded at INITIAL_RATING.
+    completed:   [(player_id, time_seconds), ...]
+    dnfs:        [player_id, ...] — submitted but didn't finish
+    absentees:   [player_id, ...] — active that day, never submitted
+    current_ratings: ratings *before* this day. Missing entries default
+        to INITIAL_RATING.
 
-    Returns (new_ratings, history_rows).
-        new_ratings: {player_id: rating_after} for *submitters only*.
-            Caller is responsible for leaving non-submitters untouched.
-        history_rows: list of dicts with keys
-            player_id, rating_before, rating_after, actual_z, expected_z, delta.
+    Returns (new_ratings, history_rows). history_rows have a 'kind'
+    field of 'completed' / 'dnf' / 'absent'.
 
-    If fewer than two players submitted, the day is skipped (returns empty,
-    empty) — there is no meaningful field to compare against.
+    A day with fewer than two completed times has no statistical signal:
+    the function returns empty results and no rating updates happen for
+    anyone (DNFs/absentees included). This is intentional — penalizing
+    twelve people because one person submitted alone would be unfair.
     """
-    if len(submissions) < 2:
+    if len(completed) < 2:
         return {}, []
 
-    times = [t for _, t in submissions]
+    times = [t for _, t in completed]
     n = len(times)
-    mean_time = sum(times) / n
-    variance = sum((t - mean_time) ** 2 for t in times) / n
-    std_time = math.sqrt(variance) or 1.0  # guard against everyone tying
+    mean_t = sum(times) / n
+    std_t = math.sqrt(sum((t - mean_t) ** 2 for t in times) / n) or 1.0
 
-    ratings_before = [current_ratings.get(pid, INITIAL_RATING) for pid, _ in submissions]
-    field_avg_R = sum(ratings_before) / n
+    completed_ratings = [
+        current_ratings.get(pid, INITIAL_RATING) for pid, _ in completed
+    ]
+    field_avg_R = sum(completed_ratings) / n
 
     new_ratings: dict[int, float] = {}
-    history_rows: list[dict] = []
-    for (pid, t), rating_before in zip(submissions, ratings_before):
-        actual_z = -(t - mean_time) / std_time
+    history: list[dict] = []
+
+    for (pid, t), rating_before in zip(completed, completed_ratings):
+        raw_z = -(t - mean_t) / std_t
+        actual_z = max(raw_z, DNF_FLOOR)  # clamp catastrophic times
         expected_z = (rating_before - field_avg_R) / RATING_PER_SIGMA
         delta = K * (actual_z - expected_z)
         rating_after = rating_before + delta
         new_ratings[pid] = rating_after
-        history_rows.append(
+        history.append(
             {
                 "player_id": pid,
+                "kind": "completed",
                 "rating_before": rating_before,
                 "rating_after": rating_after,
                 "actual_z": actual_z,
@@ -64,14 +88,63 @@ def compute_apr_update(
                 "delta": delta,
             }
         )
-    return new_ratings, history_rows
+
+    for pid in dnfs:
+        rating_before = current_ratings.get(pid, INITIAL_RATING)
+        expected_z = (rating_before - field_avg_R) / RATING_PER_SIGMA
+        delta = K * (DNF_FLOOR - expected_z)
+        rating_after = rating_before + delta
+        new_ratings[pid] = rating_after
+        history.append(
+            {
+                "player_id": pid,
+                "kind": "dnf",
+                "rating_before": rating_before,
+                "rating_after": rating_after,
+                "actual_z": DNF_FLOOR,
+                "expected_z": expected_z,
+                "delta": delta,
+            }
+        )
+
+    for pid in absentees:
+        rating_before = current_ratings.get(pid, INITIAL_RATING)
+        expected_z = (rating_before - field_avg_R) / RATING_PER_SIGMA
+        delta = K * (ABSENT_FLOOR - expected_z)
+        rating_after = rating_before + delta
+        new_ratings[pid] = rating_after
+        history.append(
+            {
+                "player_id": pid,
+                "kind": "absent",
+                "rating_before": rating_before,
+                "rating_after": rating_after,
+                "actual_z": ABSENT_FLOOR,
+                "expected_z": expected_z,
+                "delta": delta,
+            }
+        )
+
+    # Zero-sum redistribution. Without it, every absentee/DNF bleeds rating
+    # out of the system; over a season the league deflates. Subtracting the
+    # mean drift from every participant's delta keeps the total constant
+    # without disturbing relative differences (or the ranking ordering).
+    if history:
+        drift = sum(h["delta"] for h in history) / len(history)
+        for h in history:
+            h["delta"] -= drift
+            h["rating_after"] = h["rating_before"] + h["delta"]
+            new_ratings[h["player_id"]] = h["rating_after"]
+
+    return new_ratings, history
 
 
 def recompute_all_ratings(conn: sqlite3.Connection) -> None:
     """Wipe rating_history and replay every puzzle_day in date order.
 
-    Cheap at our scale (~50 days × ~13 players); call freely after any admin
-    edit to submissions or roster.
+    Cheap at our scale (~13 active × ~50 days). Re-run whenever a
+    submission is inserted, updated, or deleted, or whenever the active
+    roster changes.
     """
     cur = conn.cursor()
     cur.execute("DELETE FROM rating_history")
@@ -79,26 +152,45 @@ def recompute_all_ratings(conn: sqlite3.Connection) -> None:
     days = cur.execute(
         "SELECT id, date FROM puzzle_days ORDER BY date ASC, id ASC"
     ).fetchall()
+    active_players = cur.execute(
+        "SELECT id, joined_date FROM players WHERE active = 1"
+    ).fetchall()
 
     current: dict[int, float] = {}
-    for day_id, _date in days:
-        rows = cur.execute(
-            "SELECT player_id, time_seconds FROM submissions WHERE day_id = ?",
+    for day_id, date_str in days:
+        completed_rows = cur.execute(
+            """SELECT player_id, time_seconds FROM submissions
+               WHERE day_id = ? AND status = 'completed'""",
             (day_id,),
         ).fetchall()
-        submissions = [(int(pid), float(t)) for pid, t in rows]
-        new_ratings, history_rows = compute_apr_update(submissions, current)
-        for h in history_rows:
+        completed = [(int(pid), float(t)) for pid, t in completed_rows]
+
+        dnf_rows = cur.execute(
+            "SELECT player_id FROM submissions WHERE day_id = ? AND status = 'dnf'",
+            (day_id,),
+        ).fetchall()
+        dnfs = [int(r[0]) for r in dnf_rows]
+
+        submitter_ids = {pid for pid, _ in completed} | set(dnfs)
+        absentees = [
+            p["id"]
+            for p in active_players
+            if p["joined_date"] <= date_str and p["id"] not in submitter_ids
+        ]
+
+        new_ratings, history = compute_apr_update(
+            completed, dnfs, absentees, current
+        )
+        for h in history:
             cur.execute(
-                """
-                INSERT INTO rating_history
-                    (player_id, day_id, rating_before, rating_after,
-                     actual_z, expected_z, delta)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
+                """INSERT INTO rating_history
+                       (player_id, day_id, kind, rating_before, rating_after,
+                        actual_z, expected_z, delta)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     h["player_id"],
                     day_id,
+                    h["kind"],
                     h["rating_before"],
                     h["rating_after"],
                     h["actual_z"],
@@ -112,14 +204,11 @@ def recompute_all_ratings(conn: sqlite3.Connection) -> None:
 
 
 def get_current_ratings(conn: sqlite3.Connection) -> dict[int, float]:
-    """Latest rating_after per player. Players with no history are absent;
-    callers should treat them as INITIAL_RATING."""
     return _ratings_as_of_date(conn, upper_bound_date=None)
 
 
 def get_ratings_as_of(conn: sqlite3.Connection, date_str: str) -> dict[int, float]:
-    """Most recent rating_after per player from days *strictly before* date_str.
-    Used by the Weekly Skirmish to pin Giant Slayer gaps to Monday-morning ratings."""
+    """Most recent rating per player from days strictly before date_str."""
     return _ratings_as_of_date(conn, upper_bound_date=date_str)
 
 
@@ -128,34 +217,26 @@ def _ratings_as_of_date(
 ) -> dict[int, float]:
     if upper_bound_date is None:
         rows = conn.execute(
-            """
-            SELECT rh.player_id, rh.rating_after
-            FROM rating_history rh
-            JOIN puzzle_days pd ON pd.id = rh.day_id
-            JOIN (
-                SELECT rh2.player_id, MAX(pd2.date) AS max_date
-                FROM rating_history rh2
-                JOIN puzzle_days pd2 ON pd2.id = rh2.day_id
-                GROUP BY rh2.player_id
-            ) latest
-              ON latest.player_id = rh.player_id AND latest.max_date = pd.date
-            """
+            """SELECT rh.player_id, rh.rating_after
+               FROM rating_history rh
+               JOIN puzzle_days pd ON pd.id = rh.day_id
+               JOIN (SELECT rh2.player_id, MAX(pd2.date) AS max_date
+                     FROM rating_history rh2
+                     JOIN puzzle_days pd2 ON pd2.id = rh2.day_id
+                     GROUP BY rh2.player_id) latest
+                 ON latest.player_id = rh.player_id AND latest.max_date = pd.date"""
         ).fetchall()
     else:
         rows = conn.execute(
-            """
-            SELECT rh.player_id, rh.rating_after
-            FROM rating_history rh
-            JOIN puzzle_days pd ON pd.id = rh.day_id
-            JOIN (
-                SELECT rh2.player_id, MAX(pd2.date) AS max_date
-                FROM rating_history rh2
-                JOIN puzzle_days pd2 ON pd2.id = rh2.day_id
-                WHERE pd2.date < ?
-                GROUP BY rh2.player_id
-            ) latest
-              ON latest.player_id = rh.player_id AND latest.max_date = pd.date
-            """,
+            """SELECT rh.player_id, rh.rating_after
+               FROM rating_history rh
+               JOIN puzzle_days pd ON pd.id = rh.day_id
+               JOIN (SELECT rh2.player_id, MAX(pd2.date) AS max_date
+                     FROM rating_history rh2
+                     JOIN puzzle_days pd2 ON pd2.id = rh2.day_id
+                     WHERE pd2.date < ?
+                     GROUP BY rh2.player_id) latest
+                 ON latest.player_id = rh.player_id AND latest.max_date = pd.date""",
             (upper_bound_date,),
         ).fetchall()
     return {int(pid): float(r) for pid, r in rows}

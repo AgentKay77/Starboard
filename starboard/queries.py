@@ -1,15 +1,9 @@
-"""Read-side queries that views use to render pages.
-
-Pure SQL plus light Python shaping. The dataset is tiny (50 days × ~13
-players), so we don't bother with caching — every page renders straight
-from sqlite.
-"""
+"""Read-side queries that views use to render pages."""
 from __future__ import annotations
 
 import sqlite3
 from collections import defaultdict
 from datetime import date, datetime, timedelta
-from typing import Any
 
 from starboard.apr import INITIAL_RATING
 from starboard.weekly import (
@@ -20,7 +14,6 @@ from starboard.weekly import (
     LIGHTNING,
     STEADY,
     compute_weekly_awards,
-    week_bounds,
 )
 
 
@@ -31,12 +24,13 @@ def format_time(seconds: float | None) -> str:
     if seconds is None:
         return "—"
     m, s = divmod(seconds, 60)
-    return f"{int(m)}:{s:05.2f}".rstrip("0").rstrip(".") if s % 1 else f"{int(m)}:{int(s):02d}"
+    if s % 1:
+        return f"{int(m)}:{s:05.2f}".rstrip("0").rstrip(".")
+    return f"{int(m)}:{int(s):02d}"
 
 
 def parse_time(raw: str) -> float:
-    """Forgiving parser: '90', '1:30', '01:30', '1:30.5'. Returns seconds.
-    Raises ValueError on garbage."""
+    """Forgiving parser: '90', '1:30', '01:30', '1:30.5' → seconds."""
     raw = raw.strip()
     if not raw:
         raise ValueError("empty time")
@@ -53,17 +47,35 @@ def parse_time(raw: str) -> float:
     return float(raw)
 
 
+def _display(row) -> str | None:
+    if row is None:
+        return None
+    return row["display_name"] or row["name"]
+
+
+def _is_late(submitted_at: str | None, day_date: str) -> bool:
+    """A submission is late if its `submitted_at` calendar date is after
+    the puzzle day's date. Submissions made on the puzzle day itself
+    aren't late, even if they came in at 23:58."""
+    if not submitted_at:
+        return False
+    return submitted_at[:10] > day_date
+
+
 # ---------- general stats ----------
 
 
 def total_stats(conn: sqlite3.Connection) -> dict:
     days = conn.execute("SELECT COUNT(*) FROM puzzle_days").fetchone()[0]
-    subs = conn.execute("SELECT COUNT(*) FROM submissions").fetchone()[0]
+    subs = conn.execute(
+        "SELECT COUNT(*) FROM submissions WHERE status = 'completed'"
+    ).fetchone()[0]
     fastest = conn.execute(
         """SELECT s.time_seconds, p.name, p.display_name, pd.date, p.id AS pid
            FROM submissions s
            JOIN players p ON p.id = s.player_id
            JOIN puzzle_days pd ON pd.id = s.day_id
+           WHERE s.status = 'completed'
            ORDER BY s.time_seconds ASC LIMIT 1"""
     ).fetchone()
     most = conn.execute(
@@ -86,18 +98,10 @@ def total_stats(conn: sqlite3.Connection) -> dict:
     }
 
 
-def _display(row) -> str | None:
-    if row is None:
-        return None
-    return row["display_name"] or row["name"]
-
-
 # ---------- standings ----------
 
 
 def standings(conn: sqlite3.Connection) -> list[dict]:
-    """All active players sorted by current APR. New players (no rating
-    history yet) are surfaced at the bottom at INITIAL_RATING."""
     latest_date_row = conn.execute("SELECT MAX(date) FROM puzzle_days").fetchone()
     latest_date = latest_date_row[0] if latest_date_row else None
 
@@ -109,7 +113,7 @@ def standings(conn: sqlite3.Connection) -> list[dict]:
     out = []
     for p in players:
         cur = conn.execute(
-            """SELECT rh.rating_after, pd.date FROM rating_history rh
+            """SELECT rh.rating_after FROM rating_history rh
                JOIN puzzle_days pd ON pd.id = rh.day_id
                WHERE rh.player_id = ? ORDER BY pd.date DESC LIMIT 1""",
             (p["id"],),
@@ -131,13 +135,13 @@ def standings(conn: sqlite3.Connection) -> list[dict]:
             "SELECT COUNT(*) FROM puzzle_days WHERE date >= ?",
             (p["joined_date"],),
         ).fetchone()[0]
-        subs = conn.execute(
+        any_subs = conn.execute(
             """SELECT COUNT(*) FROM submissions s
                JOIN puzzle_days pd ON pd.id = s.day_id
                WHERE s.player_id = ? AND pd.date >= ?""",
             (p["id"], p["joined_date"]),
         ).fetchone()[0]
-        attendance = (subs / days_avail) if days_avail else 0.0
+        attendance = (any_subs / days_avail) if days_avail else 0.0
 
         champ_count = conn.execute(
             "SELECT COUNT(*) FROM weekly_awards WHERE player_id = ? AND award = ?",
@@ -158,7 +162,7 @@ def standings(conn: sqlite3.Connection) -> list[dict]:
                 "attendance": attendance,
                 "champions": champ_count,
                 "trophies": trophy_count,
-                "submissions": subs,
+                "submissions": any_subs,
             }
         )
     out.sort(key=lambda r: (-r["rating"], r["player_id"]))
@@ -187,7 +191,7 @@ def player_profile(conn: sqlite3.Connection, player_id: int) -> dict | None:
             break
 
     rating_history = conn.execute(
-        """SELECT pd.date, rh.rating_after, rh.delta, rh.actual_z
+        """SELECT pd.date, rh.kind, rh.rating_after, rh.delta, rh.actual_z
            FROM rating_history rh
            JOIN puzzle_days pd ON pd.id = rh.day_id
            WHERE rh.player_id = ?
@@ -195,7 +199,6 @@ def player_profile(conn: sqlite3.Connection, player_id: int) -> dict | None:
         (player_id,),
     ).fetchall()
 
-    # Weekly awards by category
     award_breakdown = {a: 0 for a in ALL_AWARDS}
     award_rows = conn.execute(
         """SELECT wa.award, wa.week_start, wa.metric_value, wa.metric_detail
@@ -209,52 +212,61 @@ def player_profile(conn: sqlite3.Connection, player_id: int) -> dict | None:
         award_breakdown[a["award"]] = award_breakdown.get(a["award"], 0) + 1
         trophy_case.append(dict(a))
 
-    # Recent submissions w/ z and rank that day
-    recent_subs = conn.execute(
-        """SELECT pd.date, s.time_seconds, rh.actual_z, rh.delta, pd.id AS day_id
-           FROM submissions s
-           JOIN puzzle_days pd ON pd.id = s.day_id
-           LEFT JOIN rating_history rh
-               ON rh.day_id = s.day_id AND rh.player_id = s.player_id
-           WHERE s.player_id = ?
+    # Recent activity: pull from rating_history (covers completed/dnf/absent)
+    recent_activity_rows = conn.execute(
+        """SELECT pd.date, pd.id AS day_id, rh.kind, rh.actual_z, rh.delta,
+                  s.time_seconds, s.submitted_at
+           FROM rating_history rh
+           JOIN puzzle_days pd ON pd.id = rh.day_id
+           LEFT JOIN submissions s
+               ON s.player_id = rh.player_id AND s.day_id = rh.day_id
+           WHERE rh.player_id = ?
            ORDER BY pd.date DESC
            LIMIT 14""",
         (player_id,),
     ).fetchall()
     recent = []
-    for r in recent_subs:
-        rank_that_day = conn.execute(
-            """SELECT COUNT(*) + 1 FROM submissions s2
-               WHERE s2.day_id = ? AND s2.time_seconds < ?""",
-            (r["day_id"], r["time_seconds"]),
-        ).fetchone()[0]
+    for r in recent_activity_rows:
+        rank_that_day = None
+        if r["kind"] == "completed" and r["time_seconds"] is not None:
+            rank_that_day = conn.execute(
+                """SELECT COUNT(*) + 1 FROM submissions s2
+                   WHERE s2.day_id = ? AND s2.status = 'completed'
+                     AND s2.time_seconds < ?""",
+                (r["day_id"], r["time_seconds"]),
+            ).fetchone()[0]
         recent.append(
             {
                 "date": r["date"],
+                "kind": r["kind"],
                 "time_seconds": r["time_seconds"],
-                "time_str": format_time(r["time_seconds"]),
+                "time_str": format_time(r["time_seconds"]) if r["time_seconds"] else "—",
                 "z": r["actual_z"],
                 "delta": r["delta"],
                 "rank": rank_that_day,
+                "is_late": _is_late(r["submitted_at"], r["date"]),
             }
         )
 
-    # Stats
-    times = [s["time_seconds"] for s in recent_subs]  # only last 14, but enough
-    all_times = conn.execute(
-        "SELECT time_seconds FROM submissions WHERE player_id = ? ORDER BY time_seconds ASC",
+    # Stats from completed times only
+    all_completed = conn.execute(
+        """SELECT time_seconds FROM submissions
+           WHERE player_id = ? AND status = 'completed'
+           ORDER BY time_seconds ASC""",
         (player_id,),
     ).fetchall()
-    all_t = [t["time_seconds"] for t in all_times]
+    all_t = [t["time_seconds"] for t in all_completed]
     fastest = all_t[0] if all_t else None
     median = all_t[len(all_t) // 2] if all_t else None
-    peak_rating = max((r["rating_after"] for r in rating_history), default=INITIAL_RATING)
+    peak_rating = max(
+        (r["rating_after"] for r in rating_history), default=INITIAL_RATING
+    )
 
-    # Day-of-week: best/worst average
+    # Day-of-week stats from completed only
     dow_rows = conn.execute(
         """SELECT pd.date, s.time_seconds FROM submissions s
            JOIN puzzle_days pd ON pd.id = s.day_id
-           WHERE s.player_id = ?""",
+           WHERE s.player_id = ? AND s.status = 'completed'""",
         (player_id,),
     ).fetchall()
     dow_buckets: dict[int, list[float]] = defaultdict(list)
@@ -266,17 +278,39 @@ def player_profile(conn: sqlite3.Connection, player_id: int) -> dict | None:
     worst_dow = max(dow_avgs.items(), key=lambda kv: kv[1]) if dow_avgs else None
     dow_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-    # Attendance
+    # Counts per status
+    status_counts = {
+        "completed": conn.execute(
+            "SELECT COUNT(*) FROM submissions WHERE player_id = ? AND status = 'completed'",
+            (player_id,),
+        ).fetchone()[0],
+        "dnf": conn.execute(
+            "SELECT COUNT(*) FROM submissions WHERE player_id = ? AND status = 'dnf'",
+            (player_id,),
+        ).fetchone()[0],
+        "absent": conn.execute(
+            "SELECT COUNT(*) FROM rating_history WHERE player_id = ? AND kind = 'absent'",
+            (player_id,),
+        ).fetchone()[0],
+        "late": conn.execute(
+            """SELECT COUNT(*) FROM submissions s
+               JOIN puzzle_days pd ON pd.id = s.day_id
+               WHERE s.player_id = ? AND substr(s.submitted_at, 1, 10) > pd.date""",
+            (player_id,),
+        ).fetchone()[0],
+    }
+
     days_avail = conn.execute(
         "SELECT COUNT(*) FROM puzzle_days WHERE date >= ?",
         (p["joined_date"],),
     ).fetchone()[0]
-    subs_count = len(all_t)
-    attendance = (subs_count / days_avail) if days_avail else 0.0
+    submitted_count = status_counts["completed"] + status_counts["dnf"]
+    attendance = (submitted_count / days_avail) if days_avail else 0.0
 
-    # H2H top 5
     h2h = h2h_for_player(conn, player_id)
     top5 = sorted(h2h, key=lambda r: -(r["wins"] + r["losses"]))[:5]
+
+    heatmap = _attendance_heatmap(conn, player_id, p["joined_date"])
 
     return {
         "player": dict(p),
@@ -291,21 +325,60 @@ def player_profile(conn: sqlite3.Connection, player_id: int) -> dict | None:
         "best_dow": (dow_names[best_dow[0]], best_dow[1]) if best_dow else None,
         "worst_dow": (dow_names[worst_dow[0]], worst_dow[1]) if worst_dow else None,
         "attendance": attendance,
-        "submissions_count": subs_count,
+        "submissions_count": submitted_count,
+        "status_counts": status_counts,
         "rating_history": [dict(r) for r in rating_history],
-        "recent_submissions": recent,
+        "recent_activity": recent,
         "trophy_case": trophy_case,
         "award_breakdown": award_breakdown,
         "h2h_top5": top5,
+        "heatmap": heatmap,
     }
+
+
+def _attendance_heatmap(
+    conn: sqlite3.Connection, player_id: int, joined_date: str
+) -> list[dict]:
+    """One entry per puzzle_day from joined_date forward.
+    kind ∈ {'completed','dnf','absent','unscored'}."""
+    rh_rows = conn.execute(
+        """SELECT pd.date, rh.kind FROM rating_history rh
+           JOIN puzzle_days pd ON pd.id = rh.day_id
+           WHERE rh.player_id = ?""",
+        (player_id,),
+    ).fetchall()
+    rh_by_date = {r["date"]: r["kind"] for r in rh_rows}
+
+    sub_rows = conn.execute(
+        """SELECT pd.date, s.status FROM submissions s
+           JOIN puzzle_days pd ON pd.id = s.day_id
+           WHERE s.player_id = ?""",
+        (player_id,),
+    ).fetchall()
+    sub_by_date = {r["date"]: r["status"] for r in sub_rows}
+
+    days = conn.execute(
+        "SELECT date FROM puzzle_days WHERE date >= ? ORDER BY date ASC",
+        (joined_date,),
+    ).fetchall()
+    out = []
+    for d in days:
+        date_str = d["date"]
+        if date_str in rh_by_date:
+            out.append({"date": date_str, "kind": rh_by_date[date_str]})
+        elif date_str in sub_by_date:
+            # Submitted but day was skipped (<2 completed) — no rating effect
+            out.append({"date": date_str, "kind": "unscored"})
+        else:
+            out.append({"date": date_str, "kind": "unscored"})
+    return out
 
 
 # ---------- head-to-head ----------
 
 
 def h2h_matrix(conn: sqlite3.Connection) -> dict:
-    """Returns {players: [...], wins: {(row_pid, col_pid): count}} where
-    wins[a, b] is "a finished ahead of b on shared days"."""
+    """Wins[a, b] = 'a finished ahead of b' on shared days. Completed only."""
     players = conn.execute(
         "SELECT id, name, display_name FROM players WHERE active = 1 ORDER BY id"
     ).fetchall()
@@ -313,13 +386,13 @@ def h2h_matrix(conn: sqlite3.Connection) -> dict:
     wins: dict[tuple[int, int], int] = defaultdict(int)
     rows = conn.execute(
         """SELECT day_id, player_id, time_seconds FROM submissions
+           WHERE status = 'completed'
            ORDER BY day_id, time_seconds ASC"""
     ).fetchall()
     by_day: dict[int, list[tuple[int, float]]] = defaultdict(list)
     for r in rows:
         by_day[r["day_id"]].append((r["player_id"], r["time_seconds"]))
-    for day_id, subs in by_day.items():
-        # subs is sorted by time asc → earlier players finished ahead.
+    for _day_id, subs in by_day.items():
         for i, (a_pid, _at) in enumerate(subs):
             for b_pid, _bt in subs[i + 1 :]:
                 wins[(a_pid, b_pid)] += 1
@@ -331,7 +404,6 @@ def h2h_matrix(conn: sqlite3.Connection) -> dict:
 
 
 def h2h_for_player(conn: sqlite3.Connection, player_id: int) -> list[dict]:
-    """Per-opponent record from the focal player's perspective."""
     matrix = h2h_matrix(conn)
     out = []
     for opp in matrix["players"]:
@@ -399,13 +471,13 @@ def career_trophies(conn: sqlite3.Connection) -> list[dict]:
 
 
 def current_week_live(conn: sqlite3.Connection, today: date | None = None) -> dict:
-    """Compute the in-progress week's standings without writing anything."""
     today = today or date.today()
     monday = today - timedelta(days=today.weekday())
     sunday = monday + timedelta(days=6)
 
     rows = conn.execute(
-        """SELECT pd.date, s.player_id, s.time_seconds, p.name, p.display_name
+        """SELECT pd.date, s.player_id, s.time_seconds, s.status,
+                  p.name, p.display_name
            FROM submissions s
            JOIN puzzle_days pd ON pd.id = s.day_id
            JOIN players p ON p.id = s.player_id
@@ -413,10 +485,11 @@ def current_week_live(conn: sqlite3.Connection, today: date | None = None) -> di
            ORDER BY pd.date""",
         (monday.isoformat(), sunday.isoformat()),
     ).fetchall()
-    submissions_by_day: dict[str, list[tuple[int, float]]] = defaultdict(list)
+    submissions_by_day: dict[str, list[tuple[int, float | None]]] = defaultdict(list)
     name_by_pid: dict[int, str] = {}
     for r in rows:
-        submissions_by_day[r["date"]].append((r["player_id"], r["time_seconds"]))
+        time_value = None if r["status"] == "dnf" else float(r["time_seconds"])
+        submissions_by_day[r["date"]].append((r["player_id"], time_value))
         name_by_pid[r["player_id"]] = r["display_name"] or r["name"]
 
     from starboard.apr import get_ratings_as_of
@@ -429,11 +502,10 @@ def current_week_live(conn: sqlite3.Connection, today: date | None = None) -> di
         apr_ratings,
     )
     awards_by_kind = {a["award"]: a for a in awards}
-    days_played = len(submissions_by_day)
     return {
         "week_start": monday.isoformat(),
         "week_end": sunday.isoformat(),
-        "days_played": days_played,
+        "days_played": len(submissions_by_day),
         "submission_count": sum(len(v) for v in submissions_by_day.values()),
         "awards": awards_by_kind,
         "name_by_pid": name_by_pid,
@@ -456,7 +528,7 @@ def latest_day(conn: sqlite3.Connection) -> dict | None:
         """SELECT s.time_seconds, p.name, p.display_name, p.id AS pid
            FROM submissions s
            JOIN players p ON p.id = s.player_id
-           WHERE s.day_id = ?
+           WHERE s.day_id = ? AND s.status = 'completed'
            ORDER BY s.time_seconds ASC LIMIT 1""",
         (row["id"],),
     ).fetchone()
@@ -479,6 +551,7 @@ def records(conn: sqlite3.Connection) -> dict:
            FROM submissions s
            JOIN players p ON p.id = s.player_id
            JOIN puzzle_days pd ON pd.id = s.day_id
+           WHERE s.status = 'completed'
            ORDER BY s.time_seconds ASC LIMIT 10"""
     ).fetchall()
     most_trophies = conn.execute(
@@ -511,18 +584,17 @@ def records(conn: sqlite3.Connection) -> dict:
            ORDER BY wa.metric_value DESC LIMIT 1"""
     ).fetchone()
 
-    # Day difficulty
     day_diff = conn.execute(
         """SELECT pd.date, AVG(s.time_seconds) AS mean_t, COUNT(s.id) AS n
            FROM puzzle_days pd
            JOIN submissions s ON s.day_id = pd.id
+           WHERE s.status = 'completed'
            GROUP BY pd.id HAVING n >= 2
            ORDER BY mean_t DESC"""
     ).fetchall()
     hardest = day_diff[0] if day_diff else None
     easiest = day_diff[-1] if day_diff else None
 
-    # Win streaks: compute by walking each player's history in date order.
     streaks = _longest_streaks(conn)
 
     return {
@@ -541,24 +613,24 @@ def records(conn: sqlite3.Connection) -> dict:
 
 
 def _longest_streaks(conn: sqlite3.Connection) -> list[dict]:
-    """A 'win' = finishing first on a day with ≥2 submitters. Streak is
-    consecutive day-wins for the same player among days they entered."""
+    """A 'win' = fastest completed time on a day with ≥2 completed submitters.
+    Streak resets on any non-win — including DNFs and absences."""
     days = conn.execute(
-        """SELECT id, date FROM puzzle_days ORDER BY date ASC"""
+        "SELECT id, date FROM puzzle_days ORDER BY date ASC"
     ).fetchall()
     winners: dict[str, int | None] = {}
     for d in days:
         first = conn.execute(
-            """SELECT s.player_id, COUNT(*) OVER () AS field
-               FROM submissions s WHERE s.day_id = ?
+            """SELECT s.player_id FROM submissions s
+               WHERE s.day_id = ? AND s.status = 'completed'
                ORDER BY s.time_seconds ASC LIMIT 1""",
             (d["id"],),
         ).fetchone()
-        field = conn.execute(
-            "SELECT COUNT(*) FROM submissions WHERE day_id = ?", (d["id"],)
+        completed_count = conn.execute(
+            "SELECT COUNT(*) FROM submissions WHERE day_id = ? AND status = 'completed'",
+            (d["id"],),
         ).fetchone()[0]
-        winners[d["date"]] = first["player_id"] if first and field >= 2 else None
-    # Walk: maintain best streak per player.
+        winners[d["date"]] = first["player_id"] if first and completed_count >= 2 else None
     best: dict[int, int] = defaultdict(int)
     cur_streak: dict[int, int] = defaultdict(int)
     for d in days:

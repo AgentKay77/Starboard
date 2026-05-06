@@ -1,7 +1,20 @@
 """Weekly Skirmish: five locked-in awards per closed week.
 
-Pure award computation lives in `compute_weekly_awards`. DB-touching helpers
-(`close_week_and_lock_awards`, `recompute_week`, `recompute_all_weeks`) wrap it.
+Pure award computation lives in `compute_weekly_awards`. DB-touching
+helpers (`close_week_and_lock_awards`, `recompute_week`,
+`recompute_all_weeks`) wrap it.
+
+DNF interaction:
+- DNFs *do* count toward Iron Man and toward Champion's ≥4-day eligibility
+  (you showed up).
+- DNFs are folded into the z-aggregates at z = DNF_FLOOR, so DNFing a hard
+  day mathematically equals bombing it on the rating side AND on Champion
+  mean. No gaming incentive.
+- Giant Slayer compares completed-only pairs (a DNF didn't beat anyone).
+- Absent players are excluded from every Skirmish award.
+
+Submission shape passed in: list[tuple[player_id, time_or_None]] where
+time=None marks a DNF.
 """
 from __future__ import annotations
 
@@ -12,7 +25,7 @@ import statistics
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
-from starboard.apr import INITIAL_RATING, get_ratings_as_of
+from starboard.apr import DNF_FLOOR, INITIAL_RATING, get_ratings_as_of
 
 CHAMPION = "champion"
 IRON_MAN = "iron_man"
@@ -28,29 +41,36 @@ STEADY_MIN_DAYS = 3
 
 
 def _z_scores_per_day(
-    submissions_by_day: dict[str, list[tuple[int, float]]],
+    submissions_by_day: dict[str, list[tuple[int, float | None]]],
 ) -> dict[str, dict[int, float]]:
-    """Per-day {player_id: z_score}, skipping days with <2 submitters."""
+    """Per-day {player_id: z}. DNFs (time=None) get DNF_FLOOR. Days with
+    fewer than two completed submitters are skipped entirely."""
     out: dict[str, dict[int, float]] = {}
     for day, subs in submissions_by_day.items():
-        if len(subs) < 2:
+        completed = [(pid, t) for pid, t in subs if t is not None]
+        dnfs = [pid for pid, t in subs if t is None]
+        if len(completed) < 2:
             continue
-        times = [t for _, t in subs]
+        times = [t for _, t in completed]
         n = len(times)
         mean_t = sum(times) / n
         std_t = math.sqrt(sum((t - mean_t) ** 2 for t in times) / n) or 1.0
-        out[day] = {pid: -(t - mean_t) / std_t for pid, t in subs}
+        scores: dict[int, float] = {}
+        for pid, t in completed:
+            scores[pid] = max(-(t - mean_t) / std_t, DNF_FLOOR)
+        for pid in dnfs:
+            scores[pid] = DNF_FLOOR
+        out[day] = scores
     return out
 
 
 def compute_weekly_awards(
     week_start: str,
     week_end: str,
-    submissions_by_day: dict[str, list[tuple[int, float]]],
+    submissions_by_day: dict[str, list[tuple[int, float | None]]],
     apr_ratings_at_week_start: dict[int, float],
 ) -> list[dict]:
-    """Return up to 5 award dicts for the week. Some awards may be absent
-    when nobody qualifies (e.g., no Champion if max days played < 4)."""
+    """Return up to 5 award dicts for the week."""
     z_by_day = _z_scores_per_day(submissions_by_day)
 
     days_played: dict[int, int] = defaultdict(int)
@@ -65,13 +85,11 @@ def compute_weekly_awards(
                 player_zs[pid].append((day, z_by_day[day][pid]))
 
     awards: list[dict] = []
-
     awards.extend(_champion(player_zs, days_played))
     awards.extend(_iron_man(submissions_count, player_zs))
     awards.extend(_lightning(player_zs))
     awards.extend(_steady(player_zs, days_played))
     awards.extend(_giant_slayer(submissions_by_day, apr_ratings_at_week_start))
-
     return awards
 
 
@@ -86,7 +104,6 @@ def _champion(player_zs, days_played) -> list[dict]:
         cands.append((pid, mean_z, days_played[pid], peak_z))
     if not cands:
         return []
-    # mean_z desc, days_played desc, peak_z desc, player_id asc
     cands.sort(key=lambda c: (-c[1], -c[2], -c[3], c[0]))
     pid, mean_z, days, peak_z = cands[0]
     return [
@@ -124,7 +141,6 @@ def _lightning(player_zs) -> list[dict]:
     for pid, zs in player_zs.items():
         if not zs:
             continue
-        # peak day for this player; tie-break on latest date
         peak_date, peak_z = max(zs, key=lambda dz: (dz[1], dz[0]))
         zlist = [z for _, z in zs]
         mean_z = sum(zlist) / len(zlist)
@@ -150,14 +166,11 @@ def _steady(player_zs, days_played) -> list[dict]:
             continue
         zlist = [z for _, z in zs]
         if len(zlist) < 2:
-            # Need ≥2 z-scores to have any std at all; with <2 we'd report 0.0
-            # which would unfairly outrank truly consistent multi-day players.
             continue
         std_z = statistics.pstdev(zlist)
         cands.append((pid, std_z, days_played[pid]))
     if not cands:
         return []
-    # std asc, days desc, player_id asc
     cands.sort(key=lambda c: (c[1], -c[2], c[0]))
     pid, std_z, days = cands[0]
     return [
@@ -171,14 +184,14 @@ def _steady(player_zs, days_played) -> list[dict]:
 
 
 def _giant_slayer(submissions_by_day, apr_ratings) -> list[dict]:
-    """Largest rating-gap upset of the week. An upset is any pair where the
-    lower-rated player finished ahead of the higher-rated player on the same
-    day. Gap is measured at week start."""
+    """Largest rating-gap upset of the week. A DNF never qualifies as a
+    winner — they didn't finish ahead of anyone."""
     upsets: list[tuple[float, str, int, int]] = []
     for day, subs in submissions_by_day.items():
-        if len(subs) < 2:
+        completed = [(pid, t) for pid, t in subs if t is not None]
+        if len(completed) < 2:
             continue
-        sorted_subs = sorted(subs, key=lambda s: s[1])  # fastest first
+        sorted_subs = sorted(completed, key=lambda s: s[1])
         for i, (winner_pid, _wt) in enumerate(sorted_subs):
             winner_r = apr_ratings.get(winner_pid, INITIAL_RATING)
             for loser_pid, _lt in sorted_subs[i + 1 :]:
@@ -188,10 +201,9 @@ def _giant_slayer(submissions_by_day, apr_ratings) -> list[dict]:
                     upsets.append((gap, day, winner_pid, loser_pid))
     if not upsets:
         return []
-    # gap desc, date desc, player_id asc
-    upsets.sort(key=lambda u: u[2])  # last fallback
-    upsets.sort(key=lambda u: u[1], reverse=True)  # date desc
-    upsets.sort(key=lambda u: u[0], reverse=True)  # gap desc (primary)
+    upsets.sort(key=lambda u: u[2])
+    upsets.sort(key=lambda u: u[1], reverse=True)
+    upsets.sort(key=lambda u: u[0], reverse=True)
     gap, day, winner_pid, loser_pid = upsets[0]
     return [
         {
@@ -206,7 +218,6 @@ def _giant_slayer(submissions_by_day, apr_ratings) -> list[dict]:
 
 
 def week_bounds(week_start: str) -> tuple[str, str]:
-    """Given a Monday ISO date, return (week_start, week_end_sunday)."""
     start = date.fromisoformat(week_start)
     if start.weekday() != 0:
         raise ValueError(f"week_start {week_start} is not a Monday")
@@ -215,26 +226,22 @@ def week_bounds(week_start: str) -> tuple[str, str]:
 
 def _load_submissions_for_week(
     conn: sqlite3.Connection, week_start: str, week_end: str
-) -> dict[str, list[tuple[int, float]]]:
+) -> dict[str, list[tuple[int, float | None]]]:
     rows = conn.execute(
-        """
-        SELECT pd.date, s.player_id, s.time_seconds
-        FROM submissions s
-        JOIN puzzle_days pd ON pd.id = s.day_id
-        WHERE pd.date BETWEEN ? AND ?
-        """,
+        """SELECT pd.date, s.player_id, s.time_seconds, s.status
+           FROM submissions s
+           JOIN puzzle_days pd ON pd.id = s.day_id
+           WHERE pd.date BETWEEN ? AND ?""",
         (week_start, week_end),
     ).fetchall()
-    out: dict[str, list[tuple[int, float]]] = defaultdict(list)
-    for d, pid, t in rows:
-        out[d].append((int(pid), float(t)))
+    out: dict[str, list[tuple[int, float | None]]] = defaultdict(list)
+    for d, pid, t, status in rows:
+        time_value = None if status == "dnf" else float(t)
+        out[d].append((int(pid), time_value))
     return dict(out)
 
 
 def close_week_and_lock_awards(conn: sqlite3.Connection, week_start: str) -> None:
-    """Compute and INSERT awards for `week_start`. Idempotent via the
-    UNIQUE(week_start, award) constraint — existing rows are preserved.
-    Use `recompute_week` to override."""
     _, week_end = week_bounds(week_start)
     submissions = _load_submissions_for_week(conn, week_start, week_end)
     apr_ratings = get_ratings_as_of(conn, week_start)
@@ -244,12 +251,10 @@ def close_week_and_lock_awards(conn: sqlite3.Connection, week_start: str) -> Non
     cur = conn.cursor()
     for a in awards:
         cur.execute(
-            """
-            INSERT OR IGNORE INTO weekly_awards
-                (week_start, week_end, award, player_id,
-                 metric_value, metric_detail, computed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
+            """INSERT OR IGNORE INTO weekly_awards
+                   (week_start, week_end, award, player_id,
+                    metric_value, metric_detail, computed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (
                 week_start,
                 week_end,
@@ -264,27 +269,20 @@ def close_week_and_lock_awards(conn: sqlite3.Connection, week_start: str) -> Non
 
 
 def recompute_week(conn: sqlite3.Connection, week_start: str) -> None:
-    """Wipe this week's awards then re-lock. Use after admin edits submissions
-    in a closed week."""
     conn.execute("DELETE FROM weekly_awards WHERE week_start = ?", (week_start,))
     conn.commit()
     close_week_and_lock_awards(conn, week_start)
 
 
 def recompute_all_weeks(conn: sqlite3.Connection) -> None:
-    """Replay every Monday-bounded week that has any submissions. Skips the
-    in-progress week (the one containing today)."""
     rows = conn.execute("SELECT MIN(date), MAX(date) FROM puzzle_days").fetchone()
     if not rows or rows[0] is None:
         return
     first = date.fromisoformat(rows[0])
     last = date.fromisoformat(rows[1])
-
     today = date.today()
-    # Step back to the Monday of the current week; that week is open.
     open_week_start = today - timedelta(days=today.weekday())
-
-    cur = first - timedelta(days=first.weekday())  # Monday of first day's week
+    cur = first - timedelta(days=first.weekday())
     conn.execute("DELETE FROM weekly_awards")
     conn.commit()
     while cur <= last:

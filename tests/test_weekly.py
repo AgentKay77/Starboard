@@ -236,6 +236,89 @@ def test_unknown_player_defaults_to_initial_rating():
     assert math.isclose(gs["metric_value"], 200.0, abs_tol=1e-9)
 
 
+# ---------- DNF interactions ----------
+
+
+def test_dnf_counts_for_iron_man():
+    """Iron Man counts every submission, completed or DNF."""
+    subs = {
+        "2026-01-05": [(1, None), (2, 50.0), (3, 60.0)],  # P1 DNF, others done
+        "2026-01-06": [(1, None), (2, 50.0)],             # P1 DNF
+        "2026-01-07": [(1, None), (2, 50.0)],             # P1 DNF
+    }
+    awards = compute_weekly_awards(WEEK_START, WEEK_END, subs, {})
+    iron = _award(awards, IRON_MAN)
+    assert iron is not None
+    # P1 has 3 DNF submissions vs P2's 3 completed; tied count → tiebreak by
+    # mean z. P2 wins because their completed mean z > P1's DNF floor.
+    assert iron["player_id"] == 2
+    # But P1 was tied on count.
+    assert iron["metric_value"] == 3.0
+
+
+def test_dnf_excluded_from_giant_slayer():
+    """A DNF didn't 'beat' anyone — they can't win Giant Slayer."""
+    subs = {
+        "2026-01-05": [(1, None), (2, 60.0)],  # P1 DNF, P2 completed
+    }
+    ratings = {1: 1300, 2: 1700}  # 400-point gap if P1 had won
+    awards = compute_weekly_awards(WEEK_START, WEEK_END, subs, ratings)
+    assert _award(awards, GIANT_SLAYER) is None  # P1 didn't actually beat P2
+
+
+def test_dnf_drags_champion_mean_to_floor():
+    """DNFs are folded into Champion z-aggregates at DNF_FLOOR (-2σ).
+    A player with mostly good days but one DNF should see their mean z
+    pulled down meaningfully — but only when the DNF day itself has ≥2
+    completers (otherwise the day is skipped entirely from z-aggregation)."""
+    subs = {
+        "2026-01-05": [(1, 50.0), (2, 60.0), (3, 70.0)],
+        "2026-01-06": [(1, 50.0), (2, 60.0), (3, 70.0)],
+        "2026-01-07": [(1, 50.0), (2, 60.0), (3, 70.0)],
+        # P1 DNFs but the day still has 2 completers, so DNF gets folded in.
+        "2026-01-08": [(1, None), (2, 60.0), (3, 70.0)],
+    }
+    awards = compute_weekly_awards(WEEK_START, WEEK_END, subs, {})
+    champ = _award(awards, CHAMPION)
+    assert champ is not None
+    assert champ["player_id"] == 1
+    # P1's z list: [+1.225, +1.225, +1.225, -2.0] → mean ≈ 0.42.
+    # Without DNF drag it would be ~+1.225.
+    assert champ["metric_value"] < 1.0
+
+
+def test_dnf_counts_toward_champion_4_day_eligibility():
+    """A player with 3 completed + 1 DNF should be eligible for Champion."""
+    subs = {
+        "2026-01-05": [(1, 50.0), (2, 60.0)],
+        "2026-01-06": [(1, 50.0), (2, 60.0)],
+        "2026-01-07": [(1, 50.0), (2, 60.0)],
+        "2026-01-08": [(1, None), (2, 60.0)],  # P1 DNF — 4th 'day played'
+    }
+    awards = compute_weekly_awards(WEEK_START, WEEK_END, subs, {})
+    champ = _award(awards, CHAMPION)
+    assert champ is not None
+    assert champ["player_id"] == 1
+
+
+def test_pure_dnf_week_no_champion():
+    """Player who DNFs every day is technically eligible (≥4 days) but their
+    mean z = -2. They could still win Champion if no one else qualifies — the
+    award goes to whoever's mean is highest, however bad."""
+    subs = {
+        "2026-01-05": [(1, None), (2, 50.0), (3, 60.0)],
+        "2026-01-06": [(1, None), (2, 50.0), (3, 60.0)],
+        "2026-01-07": [(1, None), (2, 50.0), (3, 60.0)],
+        "2026-01-08": [(1, None), (2, 50.0), (3, 60.0)],
+    }
+    awards = compute_weekly_awards(WEEK_START, WEEK_END, subs, {})
+    champ = _award(awards, CHAMPION)
+    # P1 (all DNFs) eligible at 4 days but mean z = -2.
+    # P2 (all wins) and P3 (all losses) only played 4 days; only the winning
+    # player gets a positive mean. Champion = P2.
+    assert champ["player_id"] == 2
+
+
 # ---------- close/recompute helpers (DB-touching) ----------
 
 

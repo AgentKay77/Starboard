@@ -1,7 +1,7 @@
 """Admin blueprint: full CRUD over players, days, submissions, users."""
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 
 from flask import (
@@ -14,6 +14,7 @@ from flask import (
     url_for,
 )
 from flask_login import current_user, login_required
+from markupsafe import Markup
 
 from starboard import apr, queries, weekly
 
@@ -35,6 +36,38 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _monday_of(d: date) -> date:
+    return d - timedelta(days=d.weekday())
+
+
+def _flash_closed_week_warning(day_date_iso: str) -> None:
+    """If the edited day belongs to a previously-closed week, nudge the
+    admin to manually recompute that week's locked awards."""
+    from starboard.app import get_db
+
+    day_d = date.fromisoformat(day_date_iso)
+    week_start = _monday_of(day_d)
+    today_monday = _monday_of(date.today())
+    if week_start >= today_monday:
+        return  # current or future week — awards aren't locked yet
+    conn = get_db()
+    locked = conn.execute(
+        "SELECT 1 FROM weekly_awards WHERE week_start = ? LIMIT 1",
+        (week_start.isoformat(),),
+    ).fetchone()
+    if not locked:
+        return
+    recompute_url = url_for("admin.recompute_one_week_form", week_start=week_start.isoformat())
+    flash(
+        Markup(
+            f"Heads up — this edit lands inside the closed week of "
+            f"<strong>{week_start.isoformat()}</strong>, whose awards are locked. "
+            f'<a href="{recompute_url}" class="underline font-medium">Recompute that week</a>.'
+        ),
+        "info",
+    )
+
+
 # ---------- dashboard ----------
 
 
@@ -51,6 +84,12 @@ def index():
         ).fetchone()[0],
         "days": conn.execute("SELECT COUNT(*) FROM puzzle_days").fetchone()[0],
         "submissions": conn.execute("SELECT COUNT(*) FROM submissions").fetchone()[0],
+        "completed": conn.execute(
+            "SELECT COUNT(*) FROM submissions WHERE status = 'completed'"
+        ).fetchone()[0],
+        "dnfs": conn.execute(
+            "SELECT COUNT(*) FROM submissions WHERE status = 'dnf'"
+        ).fetchone()[0],
         "users": conn.execute("SELECT COUNT(*) FROM users").fetchone()[0],
         "weeks_locked": conn.execute(
             "SELECT COUNT(DISTINCT week_start) FROM weekly_awards"
@@ -85,7 +124,7 @@ def players():
                     conn.commit()
                     flash(f"Added {name}.", "success")
                     apr.recompute_all_ratings(conn)
-                except Exception as e:  # IntegrityError, etc.
+                except Exception as e:
                     flash(f"Couldn't add player: {e}", "error")
         elif action == "edit":
             pid = int(request.form.get("player_id"))
@@ -99,12 +138,14 @@ def players():
             pid = int(request.form.get("player_id"))
             conn.execute("UPDATE players SET active = 0 WHERE id = ?", (pid,))
             conn.commit()
-            flash("Player deactivated. History preserved.", "info")
+            apr.recompute_all_ratings(conn)
+            flash("Player deactivated. History preserved; ratings recomputed.", "info")
         elif action == "reactivate":
             pid = int(request.form.get("player_id"))
             conn.execute("UPDATE players SET active = 1 WHERE id = ?", (pid,))
             conn.commit()
-            flash("Player reactivated.", "success")
+            apr.recompute_all_ratings(conn)
+            flash("Player reactivated; ratings recomputed.", "success")
         return redirect(url_for("admin.players"))
 
     rows = conn.execute(
@@ -138,10 +179,16 @@ def days():
                 flash(f"Couldn't add day: {e}", "error")
         elif action == "delete":
             day_id = int(request.form.get("day_id"))
+            row = conn.execute(
+                "SELECT date FROM puzzle_days WHERE id = ?", (day_id,)
+            ).fetchone()
+            day_date = row["date"] if row else None
             conn.execute("DELETE FROM puzzle_days WHERE id = ?", (day_id,))
             conn.commit()
             apr.recompute_all_ratings(conn)
             flash("Day deleted; ratings recomputed.", "info")
+            if day_date:
+                _flash_closed_week_warning(day_date)
         elif action == "edit_notes":
             day_id = int(request.form.get("day_id"))
             notes = (request.form.get("notes") or "").strip() or None
@@ -150,7 +197,10 @@ def days():
         return redirect(url_for("admin.days"))
 
     rows = conn.execute(
-        """SELECT pd.*, COUNT(s.id) AS field_size
+        """SELECT pd.*,
+                  COUNT(s.id) AS field_size,
+                  SUM(CASE WHEN s.status='completed' THEN 1 ELSE 0 END) AS completed_count,
+                  SUM(CASE WHEN s.status='dnf' THEN 1 ELSE 0 END) AS dnf_count
            FROM puzzle_days pd
            LEFT JOIN submissions s ON s.day_id = pd.id
            GROUP BY pd.id ORDER BY pd.date DESC"""
@@ -175,48 +225,69 @@ def submissions(day_id: int):
         action = request.form.get("action")
         if action == "upsert":
             pid = int(request.form.get("player_id"))
+            status = (request.form.get("status") or "completed").strip()
             raw_time = (request.form.get("time") or "").strip()
-            try:
-                seconds = queries.parse_time(raw_time)
-                assert seconds > 0
-            except (ValueError, AssertionError):
-                flash(f"Invalid time: {raw_time!r}", "error")
+            if status not in ("completed", "dnf"):
+                flash("Invalid status.", "error")
                 return redirect(url_for("admin.submissions", day_id=day_id))
+            seconds: float | None
+            if status == "dnf":
+                seconds = None
+            else:
+                try:
+                    seconds = queries.parse_time(raw_time)
+                    assert seconds > 0
+                except (ValueError, AssertionError):
+                    flash(f"Invalid time: {raw_time!r}", "error")
+                    return redirect(url_for("admin.submissions", day_id=day_id))
             existing = conn.execute(
                 "SELECT id FROM submissions WHERE player_id = ? AND day_id = ?",
                 (pid, day_id),
             ).fetchone()
             if existing:
                 conn.execute(
-                    """UPDATE submissions SET time_seconds = ?, submitted_at = ?,
-                       submitted_by_user_id = ? WHERE id = ?""",
-                    (seconds, _now(), current_user.id, existing["id"]),
+                    """UPDATE submissions SET time_seconds = ?, status = ?,
+                       submitted_at = ?, submitted_by_user_id = ?
+                       WHERE id = ?""",
+                    (seconds, status, _now(), current_user.id, existing["id"]),
                 )
             else:
                 conn.execute(
                     """INSERT INTO submissions
-                       (player_id, day_id, time_seconds, submitted_at, submitted_by_user_id)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (pid, day_id, seconds, _now(), current_user.id),
+                           (player_id, day_id, time_seconds, status,
+                            submitted_at, submitted_by_user_id)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (pid, day_id, seconds, status, _now(), current_user.id),
                 )
             conn.commit()
             apr.recompute_all_ratings(conn)
             flash("Submission saved; ratings recomputed.", "success")
+            _flash_closed_week_warning(day["date"])
         elif action == "delete":
             sid = int(request.form.get("submission_id"))
             conn.execute("DELETE FROM submissions WHERE id = ?", (sid,))
             conn.commit()
             apr.recompute_all_ratings(conn)
             flash("Submission deleted; ratings recomputed.", "info")
+            _flash_closed_week_warning(day["date"])
         return redirect(url_for("admin.submissions", day_id=day_id))
 
     subs = conn.execute(
         """SELECT s.*, p.name, p.display_name FROM submissions s
            JOIN players p ON p.id = s.player_id
            WHERE s.day_id = ?
-           ORDER BY s.time_seconds ASC""",
+           ORDER BY (s.status = 'dnf') ASC, s.time_seconds ASC""",
         (day_id,),
     ).fetchall()
+    # Annotate with is_late boolean for template.
+    subs_with_late = []
+    for s in subs:
+        d = dict(s)
+        d["is_late"] = (
+            s["submitted_at"][:10] > day["date"] if s["submitted_at"] else False
+        )
+        subs_with_late.append(d)
+
     active_players = conn.execute(
         "SELECT id, name, display_name FROM players WHERE active = 1 ORDER BY name"
     ).fetchall()
@@ -225,8 +296,9 @@ def submissions(day_id: int):
     return render_template(
         "admin/submissions.html",
         day=day,
-        submissions=subs,
+        submissions=subs_with_late,
         available_players=available,
+        week_of=_monday_of(date.fromisoformat(day["date"])).isoformat(),
     )
 
 
@@ -305,3 +377,11 @@ def recompute_one_week():
         except Exception as e:
             flash(f"Couldn't recompute: {e}", "error")
     return redirect(url_for("admin.index"))
+
+
+@admin_bp.route("/recompute/week/<week_start>", methods=["GET"])
+@admin_required
+def recompute_one_week_form(week_start: str):
+    """GET handler so closed-week warning flashes can link to a one-click
+    confirmation page that POSTs the recompute."""
+    return render_template("admin/recompute_week.html", week_start=week_start)

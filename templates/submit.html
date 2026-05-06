@@ -4,9 +4,9 @@
 
 <div class="max-w-md mx-auto">
   <h1 class="font-display text-3xl tracking-wider uppercase mb-1">Submit time</h1>
-  <p class="text-slate-400 text-sm mb-5">Format: <code class="numeral">m:ss</code> or raw seconds (e.g. <code class="numeral">1:42</code> or <code class="numeral">102</code>).</p>
+  <p class="text-slate-400 text-sm mb-5">Format: <code class="numeral">m:ss</code> or raw seconds (e.g. <code class="numeral">1:42</code> or <code class="numeral">102</code>). DNF if you started but didn't finish.</p>
 
-  <form method="post" class="scoreboard p-5 space-y-4">
+  <form method="post" class="scoreboard p-5 space-y-4" id="submit-form">
     <label class="block">
       <span class="text-xs font-display tracking-widest uppercase text-slate-400">Date</span>
       <input type="date" name="date" required value="{{ default_date }}"
@@ -21,16 +21,55 @@
         {% endfor %}
       </select>
     </label>
-    <label class="block">
+
+    <fieldset>
+      <legend class="text-xs font-display tracking-widest uppercase text-slate-400 mb-2">Status</legend>
+      <div class="grid grid-cols-2 gap-2">
+        <label class="flex items-center gap-2 px-3 py-2 border border-white/10 rounded cursor-pointer has-[:checked]:bg-accent/15 has-[:checked]:border-accent">
+          <input type="radio" name="status" value="completed" checked id="status-completed" class="accent-accent" />
+          <span class="font-display tracking-widest uppercase text-sm">Completed</span>
+        </label>
+        <label class="flex items-center gap-2 px-3 py-2 border border-white/10 rounded cursor-pointer has-[:checked]:bg-yellow-500/15 has-[:checked]:border-yellow-500">
+          <input type="radio" name="status" value="dnf" id="status-dnf" class="accent-yellow-500" />
+          <span class="font-display tracking-widest uppercase text-sm">DNF</span>
+        </label>
+      </div>
+    </fieldset>
+
+    <label class="block" id="time-field">
       <span class="text-xs font-display tracking-widest uppercase text-slate-400">Time</span>
-      <input type="text" name="time" required inputmode="numeric" pattern="[0-9:.]+"
+      <input type="text" name="time" inputmode="numeric" pattern="[0-9:.]+"
              placeholder="1:42 or 102"
              class="mt-1 w-full bg-navy-800 border border-white/10 rounded px-3 py-2 text-white numeral text-lg" />
+      <span class="text-[11px] text-slate-500 mt-1 block">A finish slower than ~−2σ is rating-equivalent to a DNF — clamp protects you from outlier days.</span>
     </label>
+
     <button type="submit" class="w-full bg-accent hover:bg-red-700 text-white font-display tracking-widest uppercase py-2.5 rounded">
-      Record time
+      Record
     </button>
   </form>
 </div>
+
+<script>
+  // Hide the time input when DNF is selected; bring it back for completed.
+  (function () {
+    const completed = document.getElementById('status-completed');
+    const dnf = document.getElementById('status-dnf');
+    const timeField = document.getElementById('time-field');
+    const timeInput = timeField.querySelector('input[name="time"]');
+    function sync() {
+      if (dnf.checked) {
+        timeField.classList.add('opacity-40', 'pointer-events-none');
+        timeInput.required = false;
+      } else {
+        timeField.classList.remove('opacity-40', 'pointer-events-none');
+        timeInput.required = true;
+      }
+    }
+    completed.addEventListener('change', sync);
+    dnf.addEventListener('change', sync);
+    sync();
+  })();
+</script>
 
 {% endblock %}

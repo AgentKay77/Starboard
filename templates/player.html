@@ -32,6 +32,37 @@
   {% endfor %}
 </section>
 
+{# ───── Attendance heatmap ───── #}
+{% if profile.heatmap %}
+<section class="scoreboard p-4 mb-5">
+  <div class="flex items-baseline justify-between mb-3">
+    <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs">Attendance</h2>
+    <div class="flex items-center gap-3 text-[10px] uppercase tracking-widest text-slate-500">
+      <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 bg-emerald-500 rounded-sm"></span> Done</span>
+      <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 bg-yellow-500 rounded-sm"></span> DNF</span>
+      <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 bg-rose-500 rounded-sm"></span> Absent</span>
+      <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 bg-slate-700 rounded-sm"></span> N/A</span>
+    </div>
+  </div>
+  <div class="flex flex-wrap gap-1">
+    {% for cell in profile.heatmap %}
+      {% set color = 'bg-slate-700' %}
+      {% if cell.kind == 'completed' %}{% set color = 'bg-emerald-500' %}
+      {% elif cell.kind == 'dnf' %}{% set color = 'bg-yellow-500' %}
+      {% elif cell.kind == 'absent' %}{% set color = 'bg-rose-500' %}
+      {% endif %}
+      <span class="inline-block w-3.5 h-3.5 rounded-sm {{ color }}" title="{{ cell.date }}: {{ cell.kind }}"></span>
+    {% endfor %}
+  </div>
+  <div class="mt-3 grid grid-cols-4 gap-2 text-center text-xs">
+    <div><div class="numeral text-white text-lg">{{ profile.status_counts.completed }}</div><div class="text-[10px] uppercase tracking-widest text-slate-500">completed</div></div>
+    <div><div class="numeral text-yellow-300 text-lg">{{ profile.status_counts.dnf }}</div><div class="text-[10px] uppercase tracking-widest text-slate-500">DNF</div></div>
+    <div><div class="numeral text-rose-300 text-lg">{{ profile.status_counts.absent }}</div><div class="text-[10px] uppercase tracking-widest text-slate-500">absent</div></div>
+    <div><div class="numeral text-blue-300 text-lg">{{ profile.status_counts.late }}</div><div class="text-[10px] uppercase tracking-widest text-slate-500">late</div></div>
+  </div>
+</section>
+{% endif %}
+
 {# ───── Rating history chart ───── #}
 {% if profile.rating_history %}
 <section class="scoreboard p-4 mb-5">
@@ -90,14 +121,15 @@
 </section>
 {% endif %}
 
-{# ───── Recent submissions ───── #}
+{# ───── Recent activity (completed / DNF / absent) ───── #}
 <section class="mb-5">
-  <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-2">Recent Submissions</h2>
+  <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-2">Recent Activity</h2>
   <div class="scoreboard overflow-hidden">
     <table class="w-full text-sm">
       <thead class="text-xs font-display tracking-widest uppercase text-slate-400">
         <tr class="border-b border-white/10">
           <th class="text-left px-3 py-2">Date</th>
+          <th class="text-left px-3 py-2">Status</th>
           <th class="text-right px-3 py-2">Time</th>
           <th class="text-right px-3 py-2 hidden sm:table-cell">Rank</th>
           <th class="text-right px-3 py-2 hidden sm:table-cell">z</th>
@@ -105,18 +137,31 @@
         </tr>
       </thead>
       <tbody>
-        {% for s in profile.recent_submissions %}
+        {% for s in profile.recent_activity %}
         <tr class="border-b border-white/5">
-          <td class="px-3 py-2 text-slate-300">{{ s.date }}</td>
-          <td class="px-3 py-2 text-right numeral">{{ s.time_str }}</td>
-          <td class="px-3 py-2 text-right hidden sm:table-cell numeral">{{ s.rank }}</td>
+          <td class="px-3 py-2 text-slate-300">
+            {{ s.date }}
+            {% if s.is_late %}
+              <span class="ml-1 text-[10px] uppercase font-display tracking-widest px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300 border border-blue-500/30" title="Submitted after the puzzle day">🕒</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2">
+            {% if s.kind == 'completed' %}<span class="text-emerald-400 text-xs uppercase font-display tracking-widest">done</span>
+            {% elif s.kind == 'dnf' %}<span class="text-yellow-300 text-xs uppercase font-display tracking-widest">DNF</span>
+            {% elif s.kind == 'absent' %}<span class="text-rose-300 text-xs uppercase font-display tracking-widest">absent</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-right numeral">
+            {% if s.kind == 'completed' %}{{ s.time_str }}{% else %}—{% endif %}
+          </td>
+          <td class="px-3 py-2 text-right hidden sm:table-cell numeral">{{ s.rank or '—' }}</td>
           <td class="px-3 py-2 text-right hidden sm:table-cell numeral text-xs text-slate-400">{{ s.z|zscore }}</td>
           <td class="px-3 py-2 text-right numeral text-xs {% if s.delta and s.delta > 0 %}text-emerald-400{% elif s.delta and s.delta < 0 %}text-rose-400{% else %}text-slate-500{% endif %}">
             {{ s.delta|delta }}
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="5" class="px-3 py-4 text-center text-slate-500">No submissions yet.</td></tr>
+        <tr><td colspan="6" class="px-3 py-4 text-center text-slate-500">No activity yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>

@@ -6,11 +6,12 @@
   <a href="{{ url_for('admin.days') }}" class="text-xs text-slate-400 hover:text-white">← Days</a>
   <h1 class="font-display text-3xl tracking-wider uppercase">{{ day.date }}</h1>
   {% if day.notes %}<p class="text-slate-400 text-sm">{{ day.notes }}</p>{% endif %}
+  <p class="text-xs text-slate-500 mt-1">Week of <span class="numeral">{{ week_of }}</span></p>
 </header>
 
 <section class="scoreboard p-4 mb-5">
   <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-3">Add or edit submission</h2>
-  <form method="post" class="grid sm:grid-cols-3 gap-2">
+  <form method="post" class="grid sm:grid-cols-4 gap-2 items-start" id="admin-sub-form">
     <input type="hidden" name="action" value="upsert" />
     <select name="player_id" required class="bg-navy-800 border border-white/10 rounded px-3 py-2 text-white">
       <optgroup label="Add new">
@@ -20,11 +21,15 @@
       </optgroup>
       <optgroup label="Replace existing">
         {% for s in submissions %}
-          <option value="{{ s.player_id }}">{{ s.display_name or s.name }} ({{ s.time_seconds|time }})</option>
+          <option value="{{ s.player_id }}">{{ s.display_name or s.name }} ({% if s.status == 'dnf' %}DNF{% else %}{{ s.time_seconds|time }}{% endif %})</option>
         {% endfor %}
       </optgroup>
     </select>
-    <input type="text" name="time" required placeholder="m:ss or seconds"
+    <select name="status" id="admin-status" class="bg-navy-800 border border-white/10 rounded px-3 py-2 text-white">
+      <option value="completed">Completed</option>
+      <option value="dnf">DNF</option>
+    </select>
+    <input type="text" name="time" id="admin-time" placeholder="m:ss or seconds"
            class="bg-navy-800 border border-white/10 rounded px-3 py-2 text-white numeral" />
     <button type="submit" class="bg-accent hover:bg-red-700 text-white font-display tracking-widest uppercase py-2 rounded">
       Save
@@ -39,15 +44,28 @@
         <th class="text-left px-3 py-2 w-10">#</th>
         <th class="text-left px-3 py-2">Player</th>
         <th class="text-right px-3 py-2">Time</th>
+        <th class="text-left px-3 py-2 hidden sm:table-cell">Submitted</th>
         <th class="text-right px-3 py-2">Actions</th>
       </tr>
     </thead>
     <tbody>
       {% for s in submissions %}
       <tr class="border-b border-white/5">
-        <td class="px-3 py-2 numeral">{{ loop.index }}</td>
-        <td class="px-3 py-2">{{ s.display_name or s.name }}</td>
-        <td class="px-3 py-2 text-right numeral">{{ s.time_seconds|time }}</td>
+        <td class="px-3 py-2 numeral">{{ loop.index if s.status == 'completed' else '—' }}</td>
+        <td class="px-3 py-2">
+          {{ s.display_name or s.name }}
+          {% if s.status == 'dnf' %}
+            <span class="ml-2 text-[10px] uppercase font-display tracking-widest px-1.5 py-0.5 rounded bg-yellow-500/15 text-yellow-300 border border-yellow-500/30">DNF</span>
+          {% endif %}
+          {% if s.is_late %}
+            <span class="ml-2 text-[10px] uppercase font-display tracking-widest px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300 border border-blue-500/30" title="Submitted after the puzzle day">🕒 Late</span>
+          {% endif %}
+        </td>
+        <td class="px-3 py-2 text-right numeral">
+          {% if s.status == 'dnf' %}<span class="text-yellow-300">DNF</span>
+          {% else %}{{ s.time_seconds|time }}{% endif %}
+        </td>
+        <td class="px-3 py-2 hidden sm:table-cell text-xs text-slate-500">{{ s.submitted_at[:16] if s.submitted_at else '—' }}</td>
         <td class="px-3 py-2 text-right">
           <form method="post" class="inline" onsubmit="return confirm('Delete this submission?');">
             <input type="hidden" name="action" value="delete" />
@@ -57,10 +75,34 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="4" class="px-3 py-4 text-center text-slate-500">No submissions yet.</td></tr>
+      <tr><td colspan="5" class="px-3 py-4 text-center text-slate-500">No submissions yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
+
+<form method="post" action="{{ url_for('admin.recompute_one_week') }}" class="mt-4">
+  <input type="hidden" name="week_start" value="{{ week_of }}" />
+  <button type="submit" class="text-xs text-slate-400 hover:text-white underline">Recompute weekly awards for week of {{ week_of }}</button>
+</form>
+
+<script>
+  // DNF mode hides the time field
+  (function () {
+    const status = document.getElementById('admin-status');
+    const time = document.getElementById('admin-time');
+    function sync() {
+      if (status.value === 'dnf') {
+        time.classList.add('opacity-40', 'pointer-events-none');
+        time.required = false;
+      } else {
+        time.classList.remove('opacity-40', 'pointer-events-none');
+        time.required = true;
+      }
+    }
+    status.addEventListener('change', sync);
+    sync();
+  })();
+</script>
 
 {% endblock %}

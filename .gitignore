@@ -11,7 +11,7 @@ venv/
 *.db-shm
 *.db-wal
 
-# Env
+# Env files (real values)
 .env
 .env.local
 

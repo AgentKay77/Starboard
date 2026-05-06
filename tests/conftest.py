@@ -43,11 +43,14 @@ def insert_day(conn, iso_date: str) -> int:
     return cur.lastrowid
 
 
-def insert_submission(conn, player_id: int, day_id: int, time_seconds: float) -> None:
+def insert_submission(
+    conn, player_id: int, day_id: int, time_seconds: float | None,
+    status: str = "completed",
+) -> None:
     conn.execute(
         """INSERT INTO submissions
-               (player_id, day_id, time_seconds, submitted_at)
-           VALUES (?, ?, ?, '2026-01-01T00:00:00Z')""",
-        (player_id, day_id, time_seconds),
+               (player_id, day_id, time_seconds, status, submitted_at)
+           VALUES (?, ?, ?, ?, '2026-01-01T00:00:00Z')""",
+        (player_id, day_id, time_seconds, status),
     )
     conn.commit()

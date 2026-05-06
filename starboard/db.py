@@ -34,7 +34,9 @@ CREATE TABLE IF NOT EXISTS submissions (
     id INTEGER PRIMARY KEY,
     player_id INTEGER NOT NULL REFERENCES players(id),
     day_id INTEGER NOT NULL REFERENCES puzzle_days(id) ON DELETE CASCADE,
-    time_seconds REAL NOT NULL,
+    time_seconds REAL,                                       -- NULL when status='dnf'
+    status TEXT NOT NULL DEFAULT 'completed'
+        CHECK (status IN ('completed', 'dnf')),
     submitted_at TEXT NOT NULL,
     submitted_by_user_id INTEGER REFERENCES users(id),
     UNIQUE(player_id, day_id)
@@ -44,6 +46,8 @@ CREATE TABLE IF NOT EXISTS rating_history (
     id INTEGER PRIMARY KEY,
     player_id INTEGER NOT NULL REFERENCES players(id),
     day_id INTEGER NOT NULL REFERENCES puzzle_days(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL DEFAULT 'completed'
+        CHECK (kind IN ('completed', 'dnf', 'absent')),
     rating_before REAL NOT NULL,
     rating_after REAL NOT NULL,
     actual_z REAL NOT NULL,
@@ -66,8 +70,10 @@ CREATE TABLE IF NOT EXISTS weekly_awards (
 
 CREATE INDEX IF NOT EXISTS idx_submissions_day ON submissions(day_id);
 CREATE INDEX IF NOT EXISTS idx_submissions_player ON submissions(player_id);
+CREATE INDEX IF NOT EXISTS idx_submissions_status ON submissions(status);
 CREATE INDEX IF NOT EXISTS idx_rating_history_player ON rating_history(player_id);
 CREATE INDEX IF NOT EXISTS idx_rating_history_day ON rating_history(day_id);
+CREATE INDEX IF NOT EXISTS idx_rating_history_kind ON rating_history(kind);
 CREATE INDEX IF NOT EXISTS idx_weekly_awards_player ON weekly_awards(player_id);
 """
 

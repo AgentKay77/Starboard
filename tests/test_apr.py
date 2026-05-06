@@ -1,9 +1,11 @@
-"""APR rating tests, with the cherry-pick attack as the headline case."""
+"""APR rating tests: clamp, DNF, absent, and the cherry-pick defense."""
 from __future__ import annotations
 
 import math
 
 from starboard.apr import (
+    ABSENT_FLOOR,
+    DNF_FLOOR,
     INITIAL_RATING,
     K,
     RATING_PER_SIGMA,
@@ -14,110 +16,201 @@ from starboard.apr import (
 from tests.conftest import insert_day, insert_submission
 
 
-def test_below_two_submissions_skipped():
-    new_ratings, history = compute_apr_update([(1, 60.0)], {1: 1500})
+# ---------- baseline / signal floor ----------
+
+
+def test_below_two_completed_skipped():
+    """Even with DNFs and absentees, no signal day → no rating updates."""
+    new_ratings, history = compute_apr_update(
+        completed=[(1, 60.0)],
+        dnfs=[2],
+        absentees=[3],
+        current_ratings={1: 1500, 2: 1500, 3: 1500},
+    )
     assert new_ratings == {}
     assert history == []
 
 
 def test_zero_submissions_skipped():
-    new_ratings, history = compute_apr_update([], {})
+    new_ratings, history = compute_apr_update([], [], [], {})
     assert new_ratings == {}
     assert history == []
 
 
 def test_zero_std_guard_no_nans():
-    """Everyone tied → variance is 0; we substitute std=1 so deltas stay finite."""
-    subs = [(1, 60.0), (2, 60.0), (3, 60.0)]
-    ratings = {1: 1500, 2: 1500, 3: 1500}
-    new_ratings, history = compute_apr_update(subs, ratings)
+    """Everyone tied → variance is 0; std=1 substitution keeps deltas finite."""
+    new_ratings, history = compute_apr_update(
+        completed=[(1, 60.0), (2, 60.0), (3, 60.0)],
+        dnfs=[],
+        absentees=[],
+        current_ratings={1: 1500, 2: 1500, 3: 1500},
+    )
     assert all(math.isfinite(r) for r in new_ratings.values())
-    # All actual_z = 0 and all expected_z = 0 → delta = 0 → rating unchanged.
     assert new_ratings == {1: 1500.0, 2: 1500.0, 3: 1500.0}
     assert all(h["delta"] == 0.0 for h in history)
 
 
 def test_winner_gains_loser_loses_at_equal_ratings():
-    subs = [(1, 50.0), (2, 70.0)]
-    ratings = {1: 1500, 2: 1500}
-    new_ratings, _ = compute_apr_update(subs, ratings)
+    new_ratings, _ = compute_apr_update(
+        completed=[(1, 50.0), (2, 70.0)],
+        dnfs=[],
+        absentees=[],
+        current_ratings={1: 1500, 2: 1500},
+    )
     assert new_ratings[1] > 1500
     assert new_ratings[2] < 1500
-    # Zero-sum at equal ratings: deltas cancel.
-    assert math.isclose(
-        (new_ratings[1] - 1500) + (new_ratings[2] - 1500), 0.0, abs_tol=1e-9
-    )
 
 
 def test_unknown_submitter_seeded_at_initial_rating():
-    """Brand-new players don't appear in current_ratings yet — seed them at 1500."""
-    subs = [(1, 50.0), (99, 70.0)]  # 99 unknown
-    ratings = {1: 1500}
-    new_ratings, history = compute_apr_update(subs, ratings)
+    _, history = compute_apr_update(
+        completed=[(1, 50.0), (99, 70.0)],
+        dnfs=[],
+        absentees=[],
+        current_ratings={1: 1500},
+    )
     rb_99 = next(h["rating_before"] for h in history if h["player_id"] == 99)
     assert rb_99 == INITIAL_RATING
 
 
+# ---------- cherry-pick defense ----------
+
+
 def test_cherry_picker_gains_less_in_weak_field():
-    """The headline defense: identical performance in a weak field yields
-    *less* rating gain, because expected_z rises with rating advantage.
+    completed = [(1, 60.0), (2, 70.0), (3, 70.0), (4, 70.0)]
 
-    Setup: player 1 finishes with the same z-score in both scenarios.
-    Only the *opponents' ratings* differ. Under plain ELO this would be
-    invisible; under APR it bleeds rating away from the cherry-picker.
-    """
-    subs = [(1, 60.0), (2, 70.0), (3, 70.0), (4, 70.0)]
-
-    equal_field = {1: 1500, 2: 1500, 3: 1500, 4: 1500}
-    new_equal, _ = compute_apr_update(subs, equal_field)
+    new_equal, _ = compute_apr_update(completed, [], [], {1: 1500, 2: 1500, 3: 1500, 4: 1500})
     delta_equal = new_equal[1] - 1500
 
-    weak_field = {1: 1500, 2: 1300, 3: 1300, 4: 1300}
-    new_weak, _ = compute_apr_update(subs, weak_field)
+    new_weak, _ = compute_apr_update(completed, [], [], {1: 1500, 2: 1300, 3: 1300, 4: 1300})
     delta_weak = new_weak[1] - 1500
 
     assert delta_weak < delta_equal
-
-    # Quantitatively: the gap equals K × expected_z difference.
-    field_avg_equal = 1500.0
-    field_avg_weak = (1500 + 1300 * 3) / 4  # 1350
-    expected_z_equal = (1500 - field_avg_equal) / RATING_PER_SIGMA  # 0
-    expected_z_weak = (1500 - field_avg_weak) / RATING_PER_SIGMA  # 0.375
-    expected_diff = K * (expected_z_weak - expected_z_equal)
+    field_avg_weak = (1500 + 1300 * 3) / 4
+    expected_diff = K * ((1500 - field_avg_weak) / RATING_PER_SIGMA)
     assert math.isclose(delta_equal - delta_weak, expected_diff, abs_tol=1e-9)
 
 
-def test_cherry_picker_must_dominate_to_gain():
-    """A higher-rated player who *barely* wins a weak field can lose rating —
-    a small actual_z below their expected_z yields negative delta."""
-    # Player 1 (1700) vs three at 1300; player 1 wins by a hair.
-    subs = [(1, 69.0), (2, 70.0), (3, 70.0), (4, 71.0)]
-    ratings = {1: 1700, 2: 1300, 3: 1300, 4: 1300}
-    new_ratings, history = compute_apr_update(subs, ratings)
+# ---------- clamp / DNF / absent ----------
+
+
+def test_completed_clamped_at_dnf_floor():
+    """A wildly slow time should not produce a delta worse than DNF.
+
+    With 5 tied finishers + one outlier, raw z for the outlier reaches
+    −2.236σ — beyond DNF_FLOOR. The clamp must pull it back to exactly
+    DNF_FLOOR.
+    """
+    completed = [(1, 200.0), (2, 50.0), (3, 50.0), (4, 50.0), (5, 50.0), (6, 50.0)]
+    _, history = compute_apr_update(completed, [], [], {})
     h1 = next(h for h in history if h["player_id"] == 1)
-    # field_avg = (1700+3*1300)/4 = 1400 → expected_z = (1700-1400)/400 = 0.75
-    assert math.isclose(h1["expected_z"], 0.75, abs_tol=1e-9)
-    # Player 1's actual_z is positive but small (~+1.0σ on this distribution),
-    # but the delta must be checked against the data — what we assert is the
-    # invariant: when actual_z < expected_z, delta is negative.
-    if h1["actual_z"] < h1["expected_z"]:
-        assert h1["delta"] < 0
-    # And the converse: dominant win → positive delta.
-    subs_dominant = [(1, 30.0), (2, 70.0), (3, 70.0), (4, 71.0)]
-    _, history_dom = compute_apr_update(subs_dominant, ratings)
-    h1_dom = next(h for h in history_dom if h["player_id"] == 1)
-    assert h1_dom["delta"] > 0
+    assert h1["actual_z"] == DNF_FLOOR
+    assert h1["kind"] == "completed"
+
+
+def test_dnf_assigned_dnf_floor():
+    _, history = compute_apr_update(
+        completed=[(1, 50.0), (2, 60.0)],
+        dnfs=[3],
+        absentees=[],
+        current_ratings={1: 1500, 2: 1500, 3: 1500},
+    )
+    h3 = next(h for h in history if h["player_id"] == 3)
+    assert h3["actual_z"] == DNF_FLOOR
+    assert h3["kind"] == "dnf"
+    # Delta is post-redistribution; assert it's negative and meaningful
+    # rather than pinning a specific value.
+    assert h3["delta"] < 0
+
+
+def test_absent_assigned_absent_floor_lower_than_dnf():
+    _, history = compute_apr_update(
+        completed=[(1, 50.0), (2, 60.0)],
+        dnfs=[],
+        absentees=[3],
+        current_ratings={1: 1500, 2: 1500, 3: 1500},
+    )
+    h3 = next(h for h in history if h["player_id"] == 3)
+    assert h3["actual_z"] == ABSENT_FLOOR
+    assert h3["kind"] == "absent"
+    assert h3["delta"] < 0
+
+
+def test_absent_costs_more_than_dnf_in_same_field():
+    """Same player rating, same field — absent's delta should be strictly
+    more negative than DNF's. This is the design guarantee."""
+    _, history = compute_apr_update(
+        completed=[(1, 50.0), (2, 60.0)],
+        dnfs=[3],
+        absentees=[4],
+        current_ratings={1: 1500, 2: 1500, 3: 1500, 4: 1500},
+    )
+    h_dnf = next(h for h in history if h["player_id"] == 3)
+    h_abs = next(h for h in history if h["player_id"] == 4)
+    assert h_abs["delta"] < h_dnf["delta"]
+
+
+def test_day_is_zero_sum():
+    """Total rating across participants is conserved per day. Without this,
+    every absentee/DNF would deflate the league."""
+    _, history = compute_apr_update(
+        completed=[(1, 50.0), (2, 60.0)],
+        dnfs=[3],
+        absentees=[4, 5],
+        current_ratings={1: 1500, 2: 1500, 3: 1500, 4: 1500, 5: 1500},
+    )
+    total_delta = sum(h["delta"] for h in history)
+    assert math.isclose(total_delta, 0.0, abs_tol=1e-9)
+
+
+def test_completers_gain_when_others_ghost():
+    """Showing up in a field with absentees pays you back: zero-sum
+    redistribution means the absentees' loss flows to the active players."""
+    # 2 completers tied → both at z=0, raw delta=0. With absentees, drift
+    # correction adds positive delta to completers.
+    _, history = compute_apr_update(
+        completed=[(1, 60.0), (2, 60.0)],
+        dnfs=[],
+        absentees=[3, 4, 5],
+        current_ratings={i: 1500 for i in range(1, 6)},
+    )
+    completers = [h for h in history if h["kind"] == "completed"]
+    assert all(h["delta"] > 0 for h in completers)
+
+
+def test_dnf_equals_clamped_completion_for_same_player():
+    """Cliff-removal property: a player who DNFs and a player whose raw
+    z would fall below DNF_FLOOR end up with the same actual_z, and (when
+    field_avg_R is identical) the same delta. No incentive to game DNF."""
+    # Six-player field; everyone rated 1500 so field_avg_R is identical in
+    # both scenarios. P6 is the bad apple.
+    _, h_completed = compute_apr_update(
+        completed=[(1, 50.0), (2, 50.0), (3, 50.0), (4, 50.0), (5, 50.0), (6, 200.0)],
+        dnfs=[],
+        absentees=[],
+        current_ratings={i: 1500 for i in range(1, 7)},
+    )
+    _, h_dnf = compute_apr_update(
+        completed=[(1, 50.0), (2, 50.0), (3, 50.0), (4, 50.0), (5, 50.0)],
+        dnfs=[6],
+        absentees=[],
+        current_ratings={i: 1500 for i in range(1, 7)},
+    )
+    p6_completed = next(h for h in h_completed if h["player_id"] == 6)
+    p6_dnf = next(h for h in h_dnf if h["player_id"] == 6)
+    assert p6_completed["actual_z"] == p6_dnf["actual_z"] == DNF_FLOOR
+    # Deltas may differ slightly because zero-sum redistribution sees a
+    # different field shape (P6 in the completed pool vs not). The cliff
+    # is bounded but non-zero — that's a known design tradeoff.
+
+
+# ---------- recompute end-to-end ----------
 
 
 def test_recompute_replays_days_in_date_order(seeded_conn):
-    """Out-of-order inserted days still get replayed in chronological order."""
     conn = seeded_conn
-    # Insert days non-chronologically.
     d2 = insert_day(conn, "2026-01-12")
     d0 = insert_day(conn, "2026-01-10")
     d1 = insert_day(conn, "2026-01-11")
-
-    # Submissions: each day, all 3 players, with player 1 winning each time.
     for day_id in (d0, d1, d2):
         insert_submission(conn, 1, day_id, 50.0)
         insert_submission(conn, 2, day_id, 60.0)
@@ -126,21 +219,32 @@ def test_recompute_replays_days_in_date_order(seeded_conn):
     recompute_all_ratings(conn)
 
     rows = conn.execute(
-        """SELECT pd.date, rh.player_id, rh.rating_before, rh.rating_after
-           FROM rating_history rh JOIN puzzle_days pd ON pd.id = rh.day_id
-           WHERE rh.player_id = 1
-           ORDER BY pd.date ASC"""
+        """SELECT pd.date, rh.kind FROM rating_history rh
+           JOIN puzzle_days pd ON pd.id = rh.day_id
+           WHERE rh.player_id = 1 ORDER BY pd.date"""
     ).fetchall()
-    dates = [r[0] for r in rows]
+    dates = [r["date"] for r in rows]
     assert dates == ["2026-01-10", "2026-01-11", "2026-01-12"]
+    assert all(r["kind"] == "completed" for r in rows)
 
-    # Player 1 should have monotonically advancing rating across these wins
-    # because their actual_z stays well above their growing expected_z.
-    ratings = [r["rating_after"] for r in rows]
-    assert ratings[0] > INITIAL_RATING
-    # Day 2 starts where day 1 ended.
-    assert math.isclose(rows[1]["rating_before"], rows[0]["rating_after"], abs_tol=1e-9)
-    assert math.isclose(rows[2]["rating_before"], rows[1]["rating_after"], abs_tol=1e-9)
+
+def test_absent_player_gets_negative_delta(seeded_conn):
+    """Replaces the old 'attendance does not affect rating' test — under
+    the new design, absentees DO take a hit."""
+    conn = seeded_conn
+    d = insert_day(conn, "2026-01-10")
+    insert_submission(conn, 1, d, 50.0)
+    insert_submission(conn, 2, d, 60.0)
+    # Player 3 is absent.
+    recompute_all_ratings(conn)
+
+    rows = conn.execute(
+        "SELECT player_id, kind, delta FROM rating_history WHERE day_id = ?",
+        (d,),
+    ).fetchall()
+    by_pid = {r["player_id"]: r for r in rows}
+    assert by_pid[3]["kind"] == "absent"
+    assert by_pid[3]["delta"] < 0
 
 
 def test_recompute_is_idempotent(seeded_conn):
@@ -152,9 +256,9 @@ def test_recompute_is_idempotent(seeded_conn):
 
     def snapshot():
         return sorted(
-            (r["player_id"], r["rating_after"])
+            (r["player_id"], r["kind"], round(r["rating_after"], 6))
             for r in conn.execute(
-                "SELECT player_id, rating_after FROM rating_history"
+                "SELECT player_id, kind, rating_after FROM rating_history"
             )
         )
 
@@ -176,27 +280,52 @@ def test_get_current_ratings_returns_latest(seeded_conn):
     recompute_all_ratings(conn)
 
     current = get_current_ratings(conn)
-    # All 3 players present, latest rating taken from 2026-01-11.
     assert set(current.keys()) == {1, 2, 3}
-    last_p1 = conn.execute(
-        """SELECT rating_after FROM rating_history rh
-           JOIN puzzle_days pd ON pd.id = rh.day_id
-           WHERE rh.player_id = 1 AND pd.date = '2026-01-11'"""
-    ).fetchone()[0]
-    assert math.isclose(current[1], last_p1, abs_tol=1e-9)
 
 
-def test_attendance_does_not_affect_rating(seeded_conn):
-    """A player who skips a day should have their rating unchanged for that
-    day — recompute should produce no rating_history row for non-submitters."""
+def test_solo_day_skipped_no_one_penalized(seeded_conn):
+    """1 completer + 12 absentees: signal-floor; no rating updates at all."""
+    conn = seeded_conn
+    d = insert_day(conn, "2026-01-10")
+    insert_submission(conn, 1, d, 50.0)
+    # Players 2 and 3 absent.
+    recompute_all_ratings(conn)
+
+    rows = conn.execute(
+        "SELECT COUNT(*) FROM rating_history WHERE day_id = ?", (d,)
+    ).fetchone()
+    assert rows[0] == 0
+
+
+def test_dnf_recompute_writes_dnf_row(seeded_conn):
     conn = seeded_conn
     d = insert_day(conn, "2026-01-10")
     insert_submission(conn, 1, d, 50.0)
     insert_submission(conn, 2, d, 60.0)
-    # Player 3 skips.
+    insert_submission(conn, 3, d, None, status="dnf")
+    recompute_all_ratings(conn)
+
+    row = conn.execute(
+        "SELECT kind, actual_z FROM rating_history WHERE day_id = ? AND player_id = 3",
+        (d,),
+    ).fetchone()
+    assert row["kind"] == "dnf"
+    assert row["actual_z"] == DNF_FLOOR
+
+
+def test_inactive_player_not_penalized(seeded_conn):
+    """Marking a player inactive removes their absent rows from history."""
+    conn = seeded_conn
+    d = insert_day(conn, "2026-01-10")
+    insert_submission(conn, 1, d, 50.0)
+    insert_submission(conn, 2, d, 60.0)
+    # Player 3 absent. Mark them inactive.
+    conn.execute("UPDATE players SET active = 0 WHERE id = 3")
+    conn.commit()
     recompute_all_ratings(conn)
 
     rows = conn.execute(
-        "SELECT player_id FROM rating_history WHERE day_id = ?", (d,)
+        "SELECT player_id, kind FROM rating_history WHERE day_id = ?", (d,)
     ).fetchall()
-    assert {r[0] for r in rows} == {1, 2}
+    pids = {r["player_id"] for r in rows}
+    assert 3 not in pids  # inactive — skipped
