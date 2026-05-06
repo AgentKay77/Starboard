@@ -1,0 +1,89 @@
+"""SQLite connection helper and schema bootstrap."""
+from __future__ import annotations
+
+import sqlite3
+from pathlib import Path
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS players (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    display_name TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    joined_date TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'user',
+    player_id INTEGER REFERENCES players(id),
+    created_at TEXT NOT NULL,
+    last_login TEXT
+);
+
+CREATE TABLE IF NOT EXISTS puzzle_days (
+    id INTEGER PRIMARY KEY,
+    date TEXT NOT NULL UNIQUE,
+    notes TEXT
+);
+
+CREATE TABLE IF NOT EXISTS submissions (
+    id INTEGER PRIMARY KEY,
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    day_id INTEGER NOT NULL REFERENCES puzzle_days(id) ON DELETE CASCADE,
+    time_seconds REAL NOT NULL,
+    submitted_at TEXT NOT NULL,
+    submitted_by_user_id INTEGER REFERENCES users(id),
+    UNIQUE(player_id, day_id)
+);
+
+CREATE TABLE IF NOT EXISTS rating_history (
+    id INTEGER PRIMARY KEY,
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    day_id INTEGER NOT NULL REFERENCES puzzle_days(id) ON DELETE CASCADE,
+    rating_before REAL NOT NULL,
+    rating_after REAL NOT NULL,
+    actual_z REAL NOT NULL,
+    expected_z REAL NOT NULL,
+    delta REAL NOT NULL,
+    UNIQUE(player_id, day_id)
+);
+
+CREATE TABLE IF NOT EXISTS weekly_awards (
+    id INTEGER PRIMARY KEY,
+    week_start TEXT NOT NULL,
+    week_end TEXT NOT NULL,
+    award TEXT NOT NULL,
+    player_id INTEGER REFERENCES players(id),
+    metric_value REAL,
+    metric_detail TEXT,
+    computed_at TEXT NOT NULL,
+    UNIQUE(week_start, award)
+);
+
+CREATE INDEX IF NOT EXISTS idx_submissions_day ON submissions(day_id);
+CREATE INDEX IF NOT EXISTS idx_submissions_player ON submissions(player_id);
+CREATE INDEX IF NOT EXISTS idx_rating_history_player ON rating_history(player_id);
+CREATE INDEX IF NOT EXISTS idx_rating_history_day ON rating_history(day_id);
+CREATE INDEX IF NOT EXISTS idx_weekly_awards_player ON weekly_awards(player_id);
+"""
+
+
+def connect(path: str | Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(str(path))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    # WAL is a no-op on :memory: but helps real files; tolerate either.
+    try:
+        conn.execute("PRAGMA journal_mode = WAL")
+    except sqlite3.DatabaseError:
+        pass
+    return conn
+
+
+def init_schema(conn: sqlite3.Connection) -> None:
+    conn.executescript(SCHEMA)
+    conn.commit()
