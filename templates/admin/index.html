@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Admin{% endblock %}
+{% block content %}
+
+<header class="mb-5">
+  <h1 class="font-display text-3xl tracking-wider uppercase">Admin</h1>
+  <p class="text-slate-400 text-sm">League management.</p>
+</header>
+
+<section class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
+  {% for label, key in [('Players','players'),('Active','active_players'),('Days','days'),('Submissions','submissions'),('Users','users'),('Weeks Locked','weeks_locked')] %}
+    <div class="scoreboard p-3">
+      <div class="text-[10px] uppercase tracking-widest text-slate-400">{{ label }}</div>
+      <div class="numeral text-2xl text-white">{{ counts[key] }}</div>
+    </div>
+  {% endfor %}
+</section>
+
+<section class="grid sm:grid-cols-2 gap-3 mb-6">
+  <a href="{{ url_for('admin.players') }}" class="scoreboard p-4 hover:bg-white/5 ticker-top">
+    <div class="font-display tracking-widest uppercase text-slate-400 text-xs">Manage</div>
+    <div class="font-display text-2xl text-white">Players</div>
+  </a>
+  <a href="{{ url_for('admin.days') }}" class="scoreboard p-4 hover:bg-white/5 ticker-top">
+    <div class="font-display tracking-widest uppercase text-slate-400 text-xs">Manage</div>
+    <div class="font-display text-2xl text-white">Days & Submissions</div>
+  </a>
+  <a href="{{ url_for('admin.users') }}" class="scoreboard p-4 hover:bg-white/5 ticker-top">
+    <div class="font-display tracking-widest uppercase text-slate-400 text-xs">Manage</div>
+    <div class="font-display text-2xl text-white">Users</div>
+  </a>
+  <a href="{{ url_for('submit.submit') }}" class="scoreboard p-4 hover:bg-white/5 ticker-top">
+    <div class="font-display tracking-widest uppercase text-slate-400 text-xs">Add</div>
+    <div class="font-display text-2xl text-white">Quick Submit</div>
+  </a>
+</section>
+
+<section class="scoreboard p-4">
+  <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-3">Recompute</h2>
+  <div class="grid sm:grid-cols-2 gap-3">
+    <form method="post" action="{{ url_for('admin.recompute_ratings') }}">
+      <button type="submit" class="w-full bg-white/10 hover:bg-white/15 text-slate-100 font-display tracking-widest uppercase py-2 rounded">
+        APR ratings
+      </button>
+    </form>
+    <form method="post" action="{{ url_for('admin.recompute_weeks') }}">
+      <button type="submit" class="w-full bg-white/10 hover:bg-white/15 text-slate-100 font-display tracking-widest uppercase py-2 rounded">
+        All weekly awards
+      </button>
+    </form>
+    <form method="post" action="{{ url_for('admin.recompute_one_week') }}" class="sm:col-span-2 flex gap-2">
+      <input type="date" name="week_start" required class="flex-1 bg-navy-800 border border-white/10 rounded px-3 py-2 text-white" />
+      <button type="submit" class="bg-accent hover:bg-red-700 text-white font-display tracking-widest uppercase px-4 py-2 rounded">
+        Recompute one week
+      </button>
+    </form>
+    <p class="text-xs text-slate-500 sm:col-span-2 italic">Pick a Monday date.</p>
+  </div>
+</section>
+
+{% endblock %}

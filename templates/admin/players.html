@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Players · Admin{% endblock %}
+{% block content %}
+
+<header class="mb-5">
+  <a href="{{ url_for('admin.index') }}" class="text-xs text-slate-400 hover:text-white">← Admin</a>
+  <h1 class="font-display text-3xl tracking-wider uppercase">Players</h1>
+</header>
+
+<section class="scoreboard p-4 mb-5">
+  <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-3">Add player</h2>
+  <form method="post" class="grid sm:grid-cols-3 gap-2">
+    <input type="hidden" name="action" value="create" />
+    <input type="text" name="name" required placeholder='Full name (e.g., "Mendiola, Julian")'
+           class="bg-navy-800 border border-white/10 rounded px-3 py-2 text-white" />
+    <input type="text" name="display_name" placeholder="Display name (optional)"
+           class="bg-navy-800 border border-white/10 rounded px-3 py-2 text-white" />
+    <input type="date" name="joined_date"
+           class="bg-navy-800 border border-white/10 rounded px-3 py-2 text-white" />
+    <button type="submit" class="sm:col-span-3 bg-accent hover:bg-red-700 text-white font-display tracking-widest uppercase py-2 rounded">
+      Add
+    </button>
+  </form>
+</section>
+
+<div class="scoreboard overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="text-xs font-display tracking-widest uppercase text-slate-400">
+      <tr class="border-b border-white/10">
+        <th class="text-left px-3 py-2">Name</th>
+        <th class="text-left px-3 py-2">Display</th>
+        <th class="text-left px-3 py-2">Joined</th>
+        <th class="text-left px-3 py-2">Status</th>
+        <th class="text-right px-3 py-2">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in players %}
+      <tr class="border-b border-white/5 align-top">
+        <td class="px-3 py-2">{{ p.name }}</td>
+        <td class="px-3 py-2">
+          <form method="post" class="flex gap-1">
+            <input type="hidden" name="action" value="edit" />
+            <input type="hidden" name="player_id" value="{{ p.id }}" />
+            <input type="text" name="display_name" value="{{ p.display_name or '' }}"
+                   class="flex-1 bg-navy-800 border border-white/10 rounded px-2 py-1 text-white text-xs" />
+            <button type="submit" class="text-xs text-accent hover:underline">save</button>
+          </form>
+        </td>
+        <td class="px-3 py-2 text-slate-400 numeral text-xs">{{ p.joined_date }}</td>
+        <td class="px-3 py-2">
+          {% if p.active %}<span class="text-emerald-400 text-xs">Active</span>
+          {% else %}<span class="text-slate-500 text-xs">Inactive</span>{% endif %}
+        </td>
+        <td class="px-3 py-2 text-right">
+          {% if p.active %}
+          <form method="post" class="inline">
+            <input type="hidden" name="action" value="deactivate" />
+            <input type="hidden" name="player_id" value="{{ p.id }}" />
+            <button type="submit" class="text-xs text-rose-400 hover:underline">deactivate</button>
+          </form>
+          {% else %}
+          <form method="post" class="inline">
+            <input type="hidden" name="action" value="reactivate" />
+            <input type="hidden" name="player_id" value="{{ p.id }}" />
+            <button type="submit" class="text-xs text-emerald-400 hover:underline">reactivate</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

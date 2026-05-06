@@ -1,0 +1,13 @@
+/var/log/starboard/*.log {
+    daily
+    missingok
+    rotate 14
+    compress
+    delaycompress
+    notifempty
+    create 0640 starboard starboard
+    sharedscripts
+    postrotate
+        systemctl reload starboard.service > /dev/null 2>&1 || true
+    endscript
+}

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Standings{% endblock %}
+{% block content %}
+
+<header class="mb-5">
+  <h1 class="font-display text-3xl tracking-wider uppercase">Standings</h1>
+  <p class="text-slate-400 text-sm">APR rating across all active players. Tap a row for the profile.</p>
+</header>
+
+<div class="scoreboard overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="text-xs font-display tracking-widest uppercase text-slate-400">
+      <tr class="border-b border-white/10">
+        <th class="text-left py-3 px-3 w-10">#</th>
+        <th class="text-left py-3 px-3">Player</th>
+        <th class="text-right py-3 px-3">Rating</th>
+        <th class="text-right py-3 px-3 hidden sm:table-cell">Δ</th>
+        <th class="text-right py-3 px-3 hidden sm:table-cell">Trophies</th>
+        <th class="text-right py-3 px-3">Att.</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in standings %}
+        <tr class="border-b border-white/5 hover:bg-white/5">
+          <td class="py-3 px-3 numeral rank-{{ r.rank if r.rank <= 3 else '' }} font-display text-lg">{{ r.rank }}</td>
+          <td class="py-3 px-3">
+            <a href="{{ url_for('public.player_view', player_id=r.player_id) }}" class="text-white hover:underline">
+              {{ r.display_name }}
+            </a>
+          </td>
+          <td class="py-3 px-3 text-right numeral text-lg">{{ r.rating|rating }}</td>
+          <td class="py-3 px-3 text-right hidden sm:table-cell numeral text-xs {% if r.latest_delta and r.latest_delta > 0 %}text-emerald-400{% elif r.latest_delta and r.latest_delta < 0 %}text-rose-400{% else %}text-slate-500{% endif %}">
+            {{ r.latest_delta|delta }}
+          </td>
+          <td class="py-3 px-3 text-right hidden sm:table-cell text-xs text-slate-300">
+            {% if r.champions %}<span class="trophy-row">🏆 <span class="numeral">{{ r.champions }}</span></span>{% endif %}
+            {% if r.trophies %}<span class="text-slate-500 ml-2 numeral">{{ r.trophies }} total</span>{% endif %}
+          </td>
+          <td class="py-3 px-3 text-right text-xs text-slate-400">{{ r.attendance|pct }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="py-6 text-center text-slate-500">No players yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

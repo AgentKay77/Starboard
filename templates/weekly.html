@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Weekly Skirmish{% endblock %}
+
+{% macro award_chip(emoji, label) %}
+  <div class="text-xs font-display tracking-widest uppercase text-slate-400">
+    <span class="award-glyph">{{ emoji }}</span> {{ label }}
+  </div>
+{% endmacro %}
+
+{% macro award_card(awards, kind, emoji, label, metric_fmt='zscore') %}
+  {% set a = awards.get(kind) %}
+  <div class="border border-white/10 rounded-lg p-3">
+    {{ award_chip(emoji, label) }}
+    {% if a %}
+      <div class="mt-1 flex items-baseline justify-between gap-2">
+        <a href="{{ url_for('public.player_view', player_id=a.player_id) }}" class="text-white font-medium truncate">{{ a.player_name }}</a>
+        <span class="numeral text-sm text-slate-300">
+          {% if metric_fmt == 'zscore' %}{{ a.metric_value|zscore }}
+          {% elif metric_fmt == 'count' %}{{ a.metric_value|int }}
+          {% elif metric_fmt == 'gap' %}+{{ a.metric_value|round|int }}
+          {% else %}{{ a.metric_value|round(3) }}σ{% endif %}
+        </span>
+      </div>
+    {% else %}
+      <div class="mt-1 text-slate-500 text-sm italic">no winner</div>
+    {% endif %}
+  </div>
+{% endmacro %}
+
+{% block content %}
+
+<header class="mb-5">
+  <h1 class="font-display text-3xl tracking-wider uppercase">Weekly Skirmish</h1>
+  <p class="text-slate-400 text-sm">Five awards, five different stories every week.</p>
+</header>
+
+{# ───── Current week (live, not locked) ───── #}
+<section class="scoreboard ticker-top-gold p-5 mb-6">
+  <div class="flex items-baseline justify-between flex-wrap gap-2">
+    <div>
+      <div class="text-xs font-display tracking-[0.3em] uppercase text-slate-400">Live · in progress</div>
+      <div class="font-display text-2xl text-white mt-1">Week of {{ current_week.week_start }}</div>
+    </div>
+    <div class="text-sm text-slate-400">
+      <span class="numeral">{{ current_week.days_played }}</span> days · <span class="numeral">{{ current_week.submission_count }}</span> submissions
+    </div>
+  </div>
+  <div class="grid sm:grid-cols-3 gap-3 mt-4">
+    {{ award_card(current_week.awards, 'champion', '🏆', 'Leading Champion', 'zscore') }}
+    {{ award_card(current_week.awards, 'lightning', '⚡', 'Top Lightning', 'zscore') }}
+    {{ award_card(current_week.awards, 'iron_man', '🔥', 'Iron Man', 'count') }}
+  </div>
+  <div class="text-xs text-slate-500 mt-3 italic">Awards lock in Monday at midnight {{ config.WEEK_TIMEZONE }}.</div>
+</section>
+
+{# ───── Closed weeks history ───── #}
+<section class="space-y-3 mb-8">
+  <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs">Closed Weeks</h2>
+  {% for w in weeks %}
+    <article class="scoreboard p-4">
+      <div class="flex items-baseline justify-between mb-3">
+        <div class="font-display text-lg tracking-wide text-white">Week of {{ w.week_start }}</div>
+        <div class="text-xs text-slate-400">→ {{ w.week_end }}</div>
+      </div>
+      <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
+        {{ award_card(w.awards, 'champion', '🏆', 'Champion', 'zscore') }}
+        {{ award_card(w.awards, 'iron_man', '🔥', 'Iron Man', 'count') }}
+        {{ award_card(w.awards, 'lightning', '⚡', 'Lightning', 'zscore') }}
+        {{ award_card(w.awards, 'steady', '🎯', 'Steady', 'std') }}
+        {{ award_card(w.awards, 'giant_slayer', '🗡️', 'Giant Slayer', 'gap') }}
+      </div>
+    </article>
+  {% else %}
+    <div class="scoreboard p-6 text-center text-slate-500">No weeks have closed yet.</div>
+  {% endfor %}
+</section>
+
+{# ───── Career trophy table ───── #}
+<section>
+  <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-2">Career Trophies</h2>
+  <div class="scoreboard overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="text-xs font-display tracking-widest uppercase text-slate-400">
+        <tr class="border-b border-white/10">
+          <th class="text-left px-3 py-2">Player</th>
+          <th class="text-right px-2 py-2">🏆</th>
+          <th class="text-right px-2 py-2">🔥</th>
+          <th class="text-right px-2 py-2">⚡</th>
+          <th class="text-right px-2 py-2">🎯</th>
+          <th class="text-right px-2 py-2">🗡️</th>
+          <th class="text-right px-3 py-2">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in career %}
+        <tr class="border-b border-white/5">
+          <td class="px-3 py-2"><a href="{{ url_for('public.player_view', player_id=r.id) }}" class="hover:underline">{{ r.display_name }}</a></td>
+          <td class="px-2 py-2 text-right numeral">{{ r.champion or 0 }}</td>
+          <td class="px-2 py-2 text-right numeral">{{ r.iron_man or 0 }}</td>
+          <td class="px-2 py-2 text-right numeral">{{ r.lightning or 0 }}</td>
+          <td class="px-2 py-2 text-right numeral">{{ r.steady or 0 }}</td>
+          <td class="px-2 py-2 text-right numeral">{{ r.giant_slayer or 0 }}</td>
+          <td class="px-3 py-2 text-right numeral text-white">{{ r.total or 0 }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% endblock %}

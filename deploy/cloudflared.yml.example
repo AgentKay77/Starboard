@@ -1,0 +1,13 @@
+# Example Cloudflare Tunnel config. Place at /etc/cloudflared/config.yml.
+# After running `cloudflared tunnel login` and `cloudflared tunnel create starboard`,
+# the credentials file path will be printed — drop it into credentials-file below.
+
+tunnel: starboard
+credentials-file: /etc/cloudflared/<tunnel-uuid>.json
+
+ingress:
+  - hostname: starboard.day
+    service: http://localhost:5000
+  - hostname: www.starboard.day
+    service: http://localhost:5000
+  - service: http_status:404

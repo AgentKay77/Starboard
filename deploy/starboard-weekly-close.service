@@ -1,0 +1,13 @@
+[Unit]
+Description=Starboard — lock in last week's Skirmish awards
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=starboard
+Group=starboard
+WorkingDirectory=/opt/starboard
+EnvironmentFile=/opt/starboard/.env
+ExecStart=/opt/starboard/.venv/bin/python -m starboard.jobs close_last_week
+StandardOutput=journal
+StandardError=journal

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Sign up{% endblock %}
+{% block content %}
+
+<div class="max-w-sm mx-auto">
+  <h1 class="font-display text-3xl tracking-wider uppercase mb-1">Sign up</h1>
+  <p class="text-slate-400 text-sm mb-5">Follow the league. Claim a player profile from your account page after signing in.</p>
+
+  <form method="post" class="scoreboard p-5 space-y-4">
+    <label class="block">
+      <span class="text-xs font-display tracking-widest uppercase text-slate-400">Email</span>
+      <input type="email" name="email" required autocomplete="email"
+             class="mt-1 w-full bg-navy-800 border border-white/10 rounded px-3 py-2 text-white" />
+    </label>
+    <label class="block">
+      <span class="text-xs font-display tracking-widest uppercase text-slate-400">Username</span>
+      <input type="text" name="username" required autocomplete="username" minlength="2" maxlength="40"
+             class="mt-1 w-full bg-navy-800 border border-white/10 rounded px-3 py-2 text-white" />
+    </label>
+    <label class="block">
+      <span class="text-xs font-display tracking-widest uppercase text-slate-400">Password</span>
+      <input type="password" name="password" required autocomplete="new-password" minlength="8"
+             class="mt-1 w-full bg-navy-800 border border-white/10 rounded px-3 py-2 text-white" />
+      <span class="text-[10px] text-slate-500">8 characters minimum.</span>
+    </label>
+    <button type="submit" class="w-full bg-accent hover:bg-red-700 text-white font-display tracking-widest uppercase py-2.5 rounded">
+      Create account
+    </button>
+    <p class="text-xs text-center text-slate-400">
+      Already have one? <a href="{{ url_for('auth.login') }}" class="text-accent hover:underline">Sign in</a>.
+    </p>
+  </form>
+</div>
+
+{% endblock %}

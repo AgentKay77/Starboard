@@ -1,0 +1,77 @@
+/* Custom overrides on top of Tailwind. Keep this file lean — Tailwind utility
+   classes do most of the work; this is for things Tailwind can't easily
+   express (custom number tickers, divider styles, etc.). */
+
+:root {
+  --navy-950: #0a0e1f;
+  --navy-900: #0f1530;
+  --navy-800: #161e3e;
+  --navy-700: #1f2a52;
+  --accent: #dc2626;
+  --gold: #fbbf24;
+  --silver: #cbd5e1;
+  --bronze: #b45309;
+}
+
+html { background: var(--navy-950); }
+body { color: #e5e7eb; }
+
+/* Body font fallback so unstyled FOUT looks vaguely right */
+body { font-family: 'DM Sans', system-ui, -apple-system, sans-serif; }
+
+.font-display {
+  font-family: 'Oswald', 'Bebas Neue', sans-serif;
+  letter-spacing: 0.02em;
+}
+.font-mono {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Big rating numerals */
+.numeral {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* Subtle scoreboard border */
+.scoreboard {
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  background: linear-gradient(180deg, rgba(31, 42, 82, 0.6) 0%, rgba(15, 21, 48, 0.85) 100%);
+  border-radius: 0.75rem;
+}
+
+/* Podium colors */
+.rank-1 { color: var(--gold); }
+.rank-2 { color: var(--silver); }
+.rank-3 { color: var(--bronze); }
+
+/* Trophies cluster on a row */
+.trophy-row { display: inline-flex; gap: 0.25rem; align-items: center; }
+
+/* H2H matrix cells: small, dense */
+.h2h-cell {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.75rem;
+  width: 2.25rem; height: 2.25rem;
+  display: flex; align-items: center; justify-content: center;
+  text-align: center;
+}
+.h2h-self { background: rgba(148, 163, 184, 0.15); }
+
+/* Flash messages */
+.flash {
+  border-radius: 0.5rem; padding: 0.75rem 1rem; font-weight: 500;
+  border: 1px solid transparent;
+}
+.flash.success { background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.4); color: #6ee7b7; }
+.flash.error { background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.4); color: #fca5a5; }
+.flash.info { background: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.4); color: #93c5fd; }
+
+/* Award glyphs sized consistently */
+.award-glyph { font-size: 1.5rem; line-height: 1; }
+
+/* Subtle ticker-style top border on cards (sports broadcast feel) */
+.ticker-top { border-top: 3px solid var(--accent); }
+.ticker-top-gold { border-top: 3px solid var(--gold); }

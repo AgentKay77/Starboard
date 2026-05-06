@@ -1,0 +1,32 @@
+[Unit]
+Description=Starboard Flask app (gunicorn)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=starboard
+Group=starboard
+WorkingDirectory=/opt/starboard
+EnvironmentFile=/opt/starboard/.env
+ExecStart=/opt/starboard/.venv/bin/gunicorn \
+    --bind 127.0.0.1:5000 \
+    --workers 2 \
+    --access-logfile /var/log/starboard/access.log \
+    --error-logfile /var/log/starboard/error.log \
+    wsgi:app
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/starboard /var/log/starboard
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Submit{% endblock %}
+{% block content %}
+
+<div class="max-w-md mx-auto">
+  <h1 class="font-display text-3xl tracking-wider uppercase mb-1">Submit time</h1>
+  <p class="text-slate-400 text-sm mb-5">Format: <code class="numeral">m:ss</code> or raw seconds (e.g. <code class="numeral">1:42</code> or <code class="numeral">102</code>).</p>
+
+  <form method="post" class="scoreboard p-5 space-y-4">
+    <label class="block">
+      <span class="text-xs font-display tracking-widest uppercase text-slate-400">Date</span>
+      <input type="date" name="date" required value="{{ default_date }}"
+             {% if not current_user.is_admin %}min="{{ min_date }}" max="{{ max_date }}"{% endif %}
+             class="mt-1 w-full bg-navy-800 border border-white/10 rounded px-3 py-2 text-white" />
+    </label>
+    <label class="block">
+      <span class="text-xs font-display tracking-widest uppercase text-slate-400">Player</span>
+      <select name="player_id" required class="mt-1 w-full bg-navy-800 border border-white/10 rounded px-3 py-2 text-white">
+        {% for p in players %}
+          <option value="{{ p.id }}">{{ p.display_name or p.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="block">
+      <span class="text-xs font-display tracking-widest uppercase text-slate-400">Time</span>
+      <input type="text" name="time" required inputmode="numeric" pattern="[0-9:.]+"
+             placeholder="1:42 or 102"
+             class="mt-1 w-full bg-navy-800 border border-white/10 rounded px-3 py-2 text-white numeral text-lg" />
+    </label>
+    <button type="submit" class="w-full bg-accent hover:bg-red-700 text-white font-display tracking-widest uppercase py-2.5 rounded">
+      Record time
+    </button>
+  </form>
+</div>
+
+{% endblock %}

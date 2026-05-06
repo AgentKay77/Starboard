@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+{% block content %}
+
+{# ───── Hero: current leader ───── #}
+<section class="scoreboard ticker-top p-5 sm:p-7 mb-5">
+  <div class="text-xs font-display tracking-[0.3em] uppercase text-slate-400">Current APR Leader</div>
+  {% if leader %}
+    <div class="mt-1 flex items-end justify-between gap-4 flex-wrap">
+      <a href="{{ url_for('public.player_view', player_id=leader.player_id) }}" class="block">
+        <div class="font-display text-3xl sm:text-5xl tracking-wide text-white">{{ leader.display_name }}</div>
+        <div class="text-slate-400 text-sm">Rank 1 · {{ leader.attendance|pct }} attendance</div>
+      </a>
+      <div class="numeral text-5xl sm:text-7xl rank-1">{{ leader.rating|rating }}</div>
+    </div>
+  {% else %}
+    <div class="text-slate-400 mt-2">No submissions yet — once times come in, the leader shows up here.</div>
+  {% endif %}
+</section>
+
+{# ───── Podium top-3 ───── #}
+{% if podium|length > 1 %}
+<section class="grid grid-cols-3 gap-3 mb-5">
+  {% for p in podium %}
+    <a href="{{ url_for('public.player_view', player_id=p.player_id) }}" class="scoreboard p-4 text-center">
+      <div class="font-display text-2xl rank-{{ p.rank }}">{{ p.rank }}</div>
+      <div class="font-display text-base sm:text-lg text-white truncate">{{ p.display_name }}</div>
+      <div class="numeral text-xl sm:text-2xl text-slate-200">{{ p.rating|rating }}</div>
+    </a>
+  {% endfor %}
+</section>
+{% endif %}
+
+{# ───── Latest day & current week banner ───── #}
+<section class="grid sm:grid-cols-2 gap-3 mb-5">
+  <div class="scoreboard p-4">
+    <div class="text-xs font-display tracking-[0.3em] uppercase text-slate-400">Latest Day</div>
+    {% if latest_day %}
+      <div class="mt-1 text-slate-200 font-display text-xl">{{ latest_day.date }}</div>
+      <div class="mt-1 flex items-center justify-between">
+        <a href="{{ url_for('public.player_view', player_id=latest_day.winner_id) }}" class="text-white font-medium">
+          {{ latest_day.winner_name }}
+        </a>
+        <span class="numeral text-2xl text-gold">{{ latest_day.winner_time_str }}</span>
+      </div>
+      <div class="text-xs text-slate-400 mt-1">{{ latest_day.field_size }} player{{ latest_day.field_size|pluralize if false else '' }}{% if latest_day.field_size != 1 %}s{% endif %} entered</div>
+    {% else %}
+      <div class="text-slate-400">No days played yet.</div>
+    {% endif %}
+  </div>
+
+  <div class="scoreboard ticker-top-gold p-4">
+    <div class="text-xs font-display tracking-[0.3em] uppercase text-slate-400">Current Week</div>
+    <div class="mt-1 text-slate-200 font-display text-xl">Week of {{ current_week.week_start }}</div>
+    <div class="text-xs text-slate-400">{{ current_week.days_played }} day{% if current_week.days_played != 1 %}s{% endif %} played · {{ current_week.submission_count }} submission{% if current_week.submission_count != 1 %}s{% endif %}</div>
+    {% set champ = current_week.awards.get('champion') %}
+    {% if champ %}
+      <div class="mt-3 flex items-center justify-between">
+        <div>
+          <span class="award-glyph">🏆</span>
+          <span class="text-xs uppercase font-display tracking-widest text-slate-400 ml-1">Leading Champion</span>
+        </div>
+        <span class="font-medium text-white">{{ current_week.name_by_pid[champ.player_id] }}</span>
+      </div>
+      <div class="text-right text-slate-400 numeral text-sm">{{ champ.metric_value|zscore }}</div>
+    {% else %}
+      <div class="mt-3 text-slate-500 text-sm italic">Champion title still up for grabs (≥ 4 days needed).</div>
+    {% endif %}
+    <a href="{{ url_for('public.weekly_view') }}" class="block mt-3 text-xs font-display tracking-widest uppercase text-accent hover:underline">Full Skirmish standings →</a>
+  </div>
+</section>
+
+{# ───── Stat tiles ───── #}
+<section class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+  <div class="scoreboard p-4">
+    <div class="text-xs font-display tracking-widest uppercase text-slate-400">Days</div>
+    <div class="numeral text-3xl text-white">{{ stats.total_days }}</div>
+  </div>
+  <div class="scoreboard p-4">
+    <div class="text-xs font-display tracking-widest uppercase text-slate-400">Submissions</div>
+    <div class="numeral text-3xl text-white">{{ stats.total_submissions }}</div>
+  </div>
+  <div class="scoreboard p-4">
+    <div class="text-xs font-display tracking-widest uppercase text-slate-400">Fastest Ever</div>
+    <div class="numeral text-2xl text-gold">{{ stats.fastest_time_str }}</div>
+    <div class="text-xs text-slate-400 truncate">{{ stats.fastest_player or '—' }}</div>
+  </div>
+  <div class="scoreboard p-4">
+    <div class="text-xs font-display tracking-widest uppercase text-slate-400">Most Trophies</div>
+    <div class="numeral text-3xl text-white">{{ stats.most_trophies_count }}</div>
+    <div class="text-xs text-slate-400 truncate">{{ stats.most_trophies_player or '—' }}</div>
+  </div>
+</section>
+
+{% endblock %}

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Days · Admin{% endblock %}
+{% block content %}
+
+<header class="mb-5">
+  <a href="{{ url_for('admin.index') }}" class="text-xs text-slate-400 hover:text-white">← Admin</a>
+  <h1 class="font-display text-3xl tracking-wider uppercase">Days</h1>
+</header>
+
+<section class="scoreboard p-4 mb-5">
+  <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-3">Add day</h2>
+  <form method="post" class="grid sm:grid-cols-3 gap-2">
+    <input type="hidden" name="action" value="create" />
+    <input type="date" name="date" required class="bg-navy-800 border border-white/10 rounded px-3 py-2 text-white" />
+    <input type="text" name="notes" placeholder="Notes (optional)" class="sm:col-span-2 bg-navy-800 border border-white/10 rounded px-3 py-2 text-white" />
+    <button type="submit" class="sm:col-span-3 bg-accent hover:bg-red-700 text-white font-display tracking-widest uppercase py-2 rounded">
+      Add day
+    </button>
+  </form>
+</section>
+
+<div class="scoreboard overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="text-xs font-display tracking-widest uppercase text-slate-400">
+      <tr class="border-b border-white/10">
+        <th class="text-left px-3 py-2">Date</th>
+        <th class="text-right px-3 py-2">Field</th>
+        <th class="text-left px-3 py-2">Notes</th>
+        <th class="text-right px-3 py-2">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in days %}
+      <tr class="border-b border-white/5">
+        <td class="px-3 py-2 numeral">{{ d.date }}</td>
+        <td class="px-3 py-2 text-right numeral">{{ d.field_size }}</td>
+        <td class="px-3 py-2 text-slate-400 text-xs">{{ d.notes or '' }}</td>
+        <td class="px-3 py-2 text-right space-x-3">
+          <a href="{{ url_for('admin.submissions', day_id=d.id) }}" class="text-xs text-accent hover:underline">manage</a>
+          <form method="post" class="inline" onsubmit="return confirm('Delete {{ d.date }} and all its submissions?');">
+            <input type="hidden" name="action" value="delete" />
+            <input type="hidden" name="day_id" value="{{ d.id }}" />
+            <button type="submit" class="text-xs text-rose-400 hover:underline">delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

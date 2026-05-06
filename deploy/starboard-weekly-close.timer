@@ -1,0 +1,13 @@
+[Unit]
+Description=Run the Starboard weekly close every Monday at 00:05
+
+[Timer]
+# Mondays at 00:05 in the system's local time. Set the system timezone
+# to match WEEK_TIMEZONE (e.g., America/Chicago) or override with the
+# OnCalendar timezone suffix.
+OnCalendar=Mon *-*-* 00:05:00
+Persistent=true
+Unit=starboard-weekly-close.service
+
+[Install]
+WantedBy=timers.target

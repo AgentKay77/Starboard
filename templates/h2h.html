@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Head-to-Head{% endblock %}
+{% block content %}
+
+<header class="mb-5">
+  <h1 class="font-display text-3xl tracking-wider uppercase">Head-to-Head</h1>
+  <p class="text-slate-400 text-sm">Cell value = times the row player finished ahead of the column player on shared days.</p>
+</header>
+
+<div class="scoreboard overflow-x-auto p-3">
+  <table class="border-collapse text-slate-200 mx-auto">
+    <thead>
+      <tr>
+        <th class="h2h-cell"></th>
+        {% for col in matrix.players %}
+          <th class="h2h-cell text-slate-400 font-display tracking-widest uppercase text-[10px]" title="{{ col.display_name }}">
+            {{ col.display_name[:3]|upper }}
+          </th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in matrix.players %}
+      <tr>
+        <td class="h2h-cell text-slate-400 font-display tracking-widest uppercase text-[10px]" title="{{ row.display_name }}">{{ row.display_name[:3]|upper }}</td>
+        {% for col in matrix.players %}
+          {% set wins = matrix.wins.get((row.id, col.id), 0) %}
+          {% set losses = matrix.wins.get((col.id, row.id), 0) %}
+          {% set total = wins + losses %}
+          {% if row.id == col.id %}
+            <td class="h2h-cell h2h-self">—</td>
+          {% else %}
+            {% set ratio = (wins / total) if total else 0.5 %}
+            <td class="h2h-cell"
+                style="background: rgba({{ (255*(1-ratio))|int }}, {{ (200*ratio)|int }}, {{ (80 + 100*ratio)|int }}, 0.20);"
+                title="{{ row.display_name }} {{ wins }}–{{ losses }} {{ col.display_name }}">
+              <span>{{ wins }}</span>
+            </td>
+          {% endif %}
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

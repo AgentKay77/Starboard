@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Records{% endblock %}
+{% block content %}
+
+<header class="mb-5">
+  <h1 class="font-display text-3xl tracking-wider uppercase">Records</h1>
+  <p class="text-slate-400 text-sm">The hall of fame.</p>
+</header>
+
+<div class="grid sm:grid-cols-2 gap-4">
+
+  {# Fastest times #}
+  <section class="scoreboard p-4">
+    <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-3">⚡ Fastest Times</h2>
+    <ol class="space-y-1.5">
+      {% for r in records.fastest %}
+        <li class="flex items-baseline justify-between text-sm">
+          <span class="text-slate-500 numeral w-6">{{ loop.index }}.</span>
+          <a href="{{ url_for('public.player_view', player_id=r.pid) }}" class="flex-1 text-white hover:underline truncate">{{ r.display_name }}</a>
+          <span class="numeral text-gold mr-2">{{ r.time_str }}</span>
+          <span class="text-xs text-slate-500">{{ r.date }}</span>
+        </li>
+      {% else %}
+        <li class="text-slate-500 italic">No times yet.</li>
+      {% endfor %}
+    </ol>
+  </section>
+
+  {# Most career trophies #}
+  <section class="scoreboard p-4">
+    <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-3">🏆 Most Career Trophies</h2>
+    <ol class="space-y-1.5">
+      {% for r in records.most_trophies %}
+        <li class="flex items-baseline justify-between text-sm">
+          <span class="text-slate-500 numeral w-6">{{ loop.index }}.</span>
+          <a href="{{ url_for('public.player_view', player_id=r.id) }}" class="flex-1 hover:underline truncate">{{ r.display_name }}</a>
+          <span class="numeral text-white">{{ r.ct }}</span>
+        </li>
+      {% else %}
+        <li class="text-slate-500 italic">No awards yet.</li>
+      {% endfor %}
+    </ol>
+  </section>
+
+  {# Most champions #}
+  <section class="scoreboard p-4">
+    <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-3">🏆 Most Champions</h2>
+    <ol class="space-y-1.5">
+      {% for r in records.most_champions %}
+        <li class="flex items-baseline justify-between text-sm">
+          <span class="text-slate-500 numeral w-6">{{ loop.index }}.</span>
+          <a href="{{ url_for('public.player_view', player_id=r.id) }}" class="flex-1 hover:underline truncate">{{ r.display_name }}</a>
+          <span class="numeral text-white">{{ r.ct }}</span>
+        </li>
+      {% else %}
+        <li class="text-slate-500 italic">No champions yet.</li>
+      {% endfor %}
+    </ol>
+  </section>
+
+  {# Highest peak APR #}
+  <section class="scoreboard p-4">
+    <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-3">📈 Highest Peak APR</h2>
+    <ol class="space-y-1.5">
+      {% for r in records.peak_apr %}
+        <li class="flex items-baseline justify-between text-sm">
+          <span class="text-slate-500 numeral w-6">{{ loop.index }}.</span>
+          <a href="{{ url_for('public.player_view', player_id=r.id) }}" class="flex-1 hover:underline truncate">{{ r.display_name }}</a>
+          <span class="numeral text-gold mr-2">{{ r.rating_after|rating }}</span>
+          <span class="text-xs text-slate-500">{{ r.date }}</span>
+        </li>
+      {% else %}
+        <li class="text-slate-500 italic">No ratings yet.</li>
+      {% endfor %}
+    </ol>
+  </section>
+
+  {# Longest streak #}
+  <section class="scoreboard p-4">
+    <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-3">🔥 Longest Win Streak</h2>
+    <ol class="space-y-1.5">
+      {% for r in records.longest_streaks %}
+        <li class="flex items-baseline justify-between text-sm">
+          <span class="text-slate-500 numeral w-6">{{ loop.index }}.</span>
+          <a href="{{ url_for('public.player_view', player_id=r.player_id) }}" class="flex-1 hover:underline truncate">{{ r.display_name }}</a>
+          <span class="numeral text-white">{{ r.streak }}</span>
+        </li>
+      {% else %}
+        <li class="text-slate-500 italic">No streaks yet.</li>
+      {% endfor %}
+    </ol>
+  </section>
+
+  {# Hardest / easiest day + biggest GS #}
+  <section class="scoreboard p-4 space-y-3">
+    <div>
+      <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs">😤 Hardest Day</h2>
+      {% if records.hardest_day %}
+        <div class="text-sm text-white mt-1">{{ records.hardest_day.date }} <span class="text-slate-400 numeral">{{ records.hardest_day.mean_t|round(1) }}s avg</span></div>
+      {% else %}<div class="text-slate-500 text-sm italic">—</div>{% endif %}
+    </div>
+    <div>
+      <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs">😌 Easiest Day</h2>
+      {% if records.easiest_day %}
+        <div class="text-sm text-white mt-1">{{ records.easiest_day.date }} <span class="text-slate-400 numeral">{{ records.easiest_day.mean_t|round(1) }}s avg</span></div>
+      {% else %}<div class="text-slate-500 text-sm italic">—</div>{% endif %}
+    </div>
+    <div>
+      <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs">🗡️ Biggest Giant Slayer</h2>
+      {% if records.biggest_gs %}
+        <div class="text-sm mt-1">
+          <a href="{{ url_for('public.player_view', player_id=records.biggest_gs.pid) }}" class="text-white hover:underline">{{ records.biggest_gs.display_name }}</a>
+          <span class="text-slate-400 numeral">+{{ records.biggest_gs.metric_value|round|int }}</span>
+          <span class="text-xs text-slate-500">week of {{ records.biggest_gs.week_start }}</span>
+        </div>
+      {% else %}<div class="text-slate-500 text-sm italic">—</div>{% endif %}
+    </div>
+  </section>
+
+</div>
+
+{% endblock %}

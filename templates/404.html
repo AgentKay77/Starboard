@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Not found{% endblock %}
+{% block content %}
+<div class="text-center py-20">
+  <div class="font-display text-6xl text-accent">404</div>
+  <p class="text-slate-400 mt-2">Nothing here.</p>
+  <a href="{{ url_for('public.home') }}" class="text-accent hover:underline mt-4 inline-block text-sm font-display tracking-widest uppercase">← Home</a>
+</div>
+{% endblock %}
