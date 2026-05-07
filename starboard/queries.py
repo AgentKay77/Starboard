@@ -347,6 +347,7 @@ def player_profile(conn: sqlite3.Connection, player_id: int) -> dict | None:
     top5 = sorted(h2h, key=lambda r: -(r["wins"] + r["losses"]))[:5]
 
     heatmap = _attendance_heatmap(conn, player_id, p["joined_date"])
+    breakdown = rating_breakdown(conn, player_id)
 
     return {
         "player": dict(p),
@@ -369,7 +370,34 @@ def player_profile(conn: sqlite3.Connection, player_id: int) -> dict | None:
         "award_breakdown": award_breakdown,
         "h2h_top5": top5,
         "heatmap": heatmap,
+        "rating_breakdown": breakdown,
     }
+
+
+def rating_breakdown(conn: sqlite3.Connection, player_id: int) -> dict:
+    """Per-bucket attribution of a player's current APR.
+
+    Each rating_history row carries a `delta` and a `kind`. Summing the
+    deltas grouped by kind tells us how many APR points the player gained
+    or lost from completed days, DNFs, and absences respectively. The
+    three sums add up exactly to (rating − INITIAL_RATING) by
+    construction, so the breakdown explains the entire current rating.
+    """
+    rows = conn.execute(
+        """SELECT kind, COUNT(*) AS n, COALESCE(SUM(delta), 0) AS total_delta
+           FROM rating_history WHERE player_id = ? GROUP BY kind""",
+        (player_id,),
+    ).fetchall()
+    out = {
+        "completed": {"count": 0, "delta": 0.0},
+        "dnf":       {"count": 0, "delta": 0.0},
+        "absent":    {"count": 0, "delta": 0.0},
+    }
+    for r in rows:
+        out[r["kind"]] = {"count": int(r["n"]), "delta": float(r["total_delta"] or 0.0)}
+    out["total_delta"] = sum(out[k]["delta"] for k in ("completed", "dnf", "absent"))
+    out["max_abs"] = max(abs(out[k]["delta"]) for k in ("completed", "dnf", "absent")) or 1.0
+    return out
 
 
 def _attendance_heatmap(

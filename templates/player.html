@@ -67,6 +67,69 @@
   </div>
 </section>
 
+{# ───── Rating breakdown ─────
+   Each row visualises how many APR points came from (or were lost to) one
+   of the three statuses. The three deltas sum to rating − 1500 by
+   construction, so the bars together explain the full current rating. #}
+{% set rb = profile.rating_breakdown %}
+{% set buckets = [
+  ('completed', 'Completed', rb.completed, 'var(--good)'),
+  ('dnf',       'DNFs',      rb.dnf,       'var(--bad)'),
+  ('absent',    'Absences',  rb.absent,    'var(--accent-2)'),
+] %}
+<section>
+  <div class="sec-h">
+    <h2>Rating breakdown</h2>
+    <span class="smallcaps">{{ profile.rating|rating }} APR · started at 1500</span>
+  </div>
+  <div class="card">
+    <table style="width: 100%; border-collapse: collapse;">
+      <tbody>
+        {% for kind, label, b, color in buckets %}
+          {% set pct = (b.delta / rb.max_abs) * 100 if rb.max_abs else 0 %}
+          {% set positive = b.delta >= 0 %}
+          <tr>
+            <td style="padding: 10px 12px 10px 0; width: 130px; vertical-align: middle;">
+              <div class="fs-14">{{ label }}</div>
+              <div class="smallcaps muted" style="font-size: 9.5px;">{{ b.count }} day(s)</div>
+            </td>
+            <td style="padding: 10px 0; vertical-align: middle;">
+              <div style="position: relative; height: 18px; background: var(--rule-soft); border-radius: 2px;">
+                {# Origin marker (zero line in the centre). #}
+                <div style="position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--rule);"></div>
+                {# Bar grows right of centre for positive deltas, left for negative. #}
+                {% if positive %}
+                  <div style="position: absolute; left: 50%; top: 0; bottom: 0; width: {{ '%.1f'|format(pct / 2) }}%; background: {{ color }}; border-radius: 0 2px 2px 0;"></div>
+                {% else %}
+                  <div style="position: absolute; right: 50%; top: 0; bottom: 0; width: {{ '%.1f'|format((-pct) / 2) }}%; background: {{ color }}; border-radius: 2px 0 0 2px;"></div>
+                {% endif %}
+              </div>
+            </td>
+            <td class="ralign num" style="padding: 10px 0 10px 12px; width: 90px; vertical-align: middle; color: {{ color }};">
+              {{ '+' if b.delta >= 0 else '' }}{{ b.delta|round|int }}
+            </td>
+          </tr>
+        {% endfor %}
+        <tr style="border-top: 1px solid var(--rule);">
+          <td style="padding: 10px 12px 0 0;">
+            <div class="fs-14" style="font-weight: 500">Net change</div>
+            <div class="smallcaps muted" style="font-size: 9.5px;">from 1500 starting APR</div>
+          </td>
+          <td></td>
+          <td class="ralign num serif fs-22" style="padding: 10px 0 0 12px; color: {{ 'var(--good)' if rb.total_delta >= 0 else 'var(--bad)' }};">
+            {{ '+' if rb.total_delta >= 0 else '' }}{{ rb.total_delta|round|int }}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="muted serif-it" style="font-size: 12px; margin: 12px 0 0;">
+      APR rewards attendance and field-relative speed, not pairwise wins. A few
+      absences can outweigh many head-to-head victories — every missed day costs
+      ≈ 50 APR for a high-rated player.
+    </p>
+  </div>
+</section>
+
 {# ───── APR trajectory + heatmap ───── #}
 <section class="grid two-col-stack" style="gap: 16px; grid-template-columns: 1.4fr 1fr;">
   <div class="card">
