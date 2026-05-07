@@ -16,7 +16,7 @@ from flask import (
 from flask_login import current_user, login_required
 from markupsafe import Markup
 
-from starboard import apr, queries, settings as settings_mod, weekly
+from starboard import apr, queries, settings as settings_mod, theories as theories_mod, weekly
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -415,6 +415,29 @@ def recompute_one_week_form(week_start: str):
     """GET handler so closed-week warning flashes can link to a one-click
     confirmation page that POSTs the recompute."""
     return render_template("admin/recompute_week.html", week_start=week_start)
+
+
+@admin_bp.route("/days/<int:day_id>/reset-board", methods=["POST"])
+@admin_required
+def reset_board(day_id: int):
+    """Wipe a day's solve-theory board. ON DELETE CASCADE drops the
+    child theories. Audit-logged."""
+    from starboard.app import get_db
+
+    conn = get_db()
+    day = conn.execute(
+        "SELECT date FROM puzzle_days WHERE id = ?", (day_id,)
+    ).fetchone()
+    if not day:
+        abort(404)
+    theories_mod.reset_board(conn, day_id)
+    settings_mod.audit_log(
+        conn, user_id=current_user.id,
+        action="reset_solve_board", detail=day["date"],
+    )
+    conn.commit()
+    flash(f"Solve-theory board for {day['date']} reset.", "info")
+    return redirect(url_for("admin.submissions", day_id=day_id))
 
 
 # ---------- bulk daily entry ----------

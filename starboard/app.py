@@ -91,6 +91,7 @@ def create_app(config: Config | None = None) -> Flask:
             "site_name": "Starboard",
             "submissions_enabled": enabled,
             "current_year": date.today().year,
+            "today_iso": date.today().isoformat(),
         }
 
     @app.template_filter("rating")
@@ -183,3 +184,63 @@ def h2h_view():
 @public_bp.route("/records")
 def records_view():
     return render_template("records.html", records=queries.records(get_db()))
+
+
+@public_bp.route("/days/<day_date>/theories")
+def day_theories(day_date: str):
+    from datetime import date as _date
+
+    from flask_login import current_user
+
+    from starboard import theories as theories_mod
+
+    try:
+        the_date = _date.fromisoformat(day_date)
+    except ValueError:
+        abort(404)
+
+    if not current_user.is_authenticated:
+        return render_template(
+            "day_theories.html",
+            day_date=the_date.isoformat(),
+            board=None, theories=[],
+            gated=True, gated_reason="signin",
+        )
+
+    conn = get_db()
+    is_admin = bool(getattr(current_user, "is_admin", False))
+    user_player_id = getattr(current_user, "player_id", None)
+
+    can_view = theories_mod.user_can_view_theories(
+        conn,
+        is_admin=is_admin,
+        user_player_id=user_player_id,
+        day_date=the_date.isoformat(),
+    )
+    if not can_view:
+        return render_template(
+            "day_theories.html",
+            day_date=the_date.isoformat(),
+            board=None, theories=[],
+            gated=True, gated_reason="no_submission",
+        )
+
+    day_row = conn.execute(
+        "SELECT id FROM puzzle_days WHERE date = ?", (the_date.isoformat(),)
+    ).fetchone()
+    if not day_row:
+        return render_template(
+            "day_theories.html",
+            day_date=the_date.isoformat(),
+            board=None, theories=[], gated=False,
+        )
+
+    board = theories_mod.get_board_for_day(conn, day_row["id"])
+    theories_list = theories_mod.get_theories_for_day(conn, day_row["id"])
+    return render_template(
+        "day_theories.html",
+        day_date=the_date.isoformat(),
+        board=board,
+        theories=theories_list,
+        gated=False,
+    )

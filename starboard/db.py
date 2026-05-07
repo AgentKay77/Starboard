@@ -91,6 +91,29 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON audit_log(timestamp DESC);
+
+CREATE TABLE IF NOT EXISTS puzzle_boards (
+    id INTEGER PRIMARY KEY,
+    day_id INTEGER NOT NULL UNIQUE
+        REFERENCES puzzle_days(id) ON DELETE CASCADE,
+    size INTEGER NOT NULL CHECK (size BETWEEN 7 AND 10),
+    regions_json TEXT NOT NULL,           -- NxN list[list[int]] of region IDs
+    stars_json   TEXT NOT NULL,           -- sorted [[r,c], ...], length 2*size
+    created_by_user_id INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS solve_theories (
+    id INTEGER PRIMARY KEY,
+    day_id  INTEGER NOT NULL REFERENCES puzzle_days(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id)       ON DELETE CASCADE,
+    pick_order_json TEXT NOT NULL,        -- subset of board.stars, ≥1 entry
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE(user_id, day_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_solve_theories_day ON solve_theories(day_id);
 """
 
 

@@ -1,8 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Submit time{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='solve-theory.css') }}" />
+{% endblock %}
 {% block content %}
 
-<div style="max-width: 540px; margin: 0 auto;" class="stack stack-24">
+<div style="max-width: 720px; margin: 0 auto;" class="stack stack-24">
   <header class="page-h">
     <div>
       <span class="smallcaps">Daily Stars · Submission</span>
@@ -42,7 +45,72 @@
       <span class="hint">Use <code>m:ss</code> or raw seconds. Decimal seconds work too.</span>
     </div>
 
-    <button type="submit" class="btn primary lg block">Record</button>
+    {# ───── Solve Theory (optional) ───── #}
+    <fieldset id="solve-theory" class="field" style="border: 0; padding: 0; margin: 24px 0 0;"
+              data-existing-board="{{ 1 if existing_board else 0 }}"
+              data-can-edit-board="{{ 1 if can_edit_board else 0 }}"
+              data-board-payload='{{ {"size": existing_board.size, "regions": existing_board.regions, "stars": existing_board.stars}|tojson if existing_board else "null" }}'
+              data-size-choices="{{ theory_size_choices|tojson }}">
+      <label class="row" style="gap: 10px; cursor: pointer;">
+        <input type="checkbox" id="solve-theory-toggle" name="solve_theory" value="on" />
+        <span class="serif fs-18" style="font-weight: 500">Solve Theory</span>
+        <span class="muted fs-13">Optional · sketch the board and your pick order.</span>
+      </label>
+
+      <div id="solve-theory-panel" hidden>
+        {% if existing_board %}
+          <div class="flash info" style="margin: 12px 0;">
+            Today's board was set by an earlier player. Tap the stars in the order you spotted them.
+            {% if can_edit_board %}
+              You can still edit the board because no one else has saved a theory yet.
+            {% endif %}
+          </div>
+        {% else %}
+          <div class="flash info" style="margin: 12px 0;">
+            You're the first to log a theory today — paint the regions, place the stars, then tap them in your pick order.
+          </div>
+        {% endif %}
+
+        <div class="theory-toolbar" data-toolbar>
+          <div class="field" style="margin: 0;">
+            <span class="label">Size</span>
+            <div class="toggle-group" data-size-group>
+              {% for n in theory_size_choices %}
+                <label>
+                  <input type="radio" name="size" value="{{ n }}" {% if existing_board and existing_board.size == n %}checked{% elif not existing_board and n == 10 %}checked{% endif %} />
+                  <span>{{ n }}×{{ n }}</span>
+                </label>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="theory-tools" data-tool-group>
+            <div class="theory-tools-label smallcaps">Tool</div>
+            <div class="theory-tool-buttons" data-tools></div>
+          </div>
+        </div>
+
+        <div class="theory-grid-wrap">
+          <div class="theory-grid" data-grid></div>
+        </div>
+
+        <p class="muted fs-13" data-hint style="margin-top: 8px;"></p>
+
+        <div class="field" style="margin-top: 16px;">
+          <label for="theory-notes">Notes</label>
+          <textarea id="theory-notes" name="notes" rows="3"
+                    maxlength="{{ notes_max_len }}"
+                    placeholder="What did you notice first? Any deductions worth sharing."></textarea>
+        </div>
+
+        {# Hidden JSON the JS fills in just before submit. #}
+        <input type="hidden" name="regions_json" data-regions />
+        <input type="hidden" name="stars_json"   data-stars />
+        <input type="hidden" name="pick_order_json" data-pick />
+      </div>
+    </fieldset>
+
+    <button type="submit" class="btn primary lg block" style="margin-top: 16px;">Record</button>
   </form>
 </div>
 
@@ -66,5 +134,6 @@
   sync();
 })();
 </script>
+<script src="{{ url_for('static', filename='solve-theory.js') }}" defer></script>
 
 {% endblock %}

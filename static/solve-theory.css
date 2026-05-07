@@ -1,0 +1,72 @@
+/* Solve Theory widget — paint regions, place stars, tap pick order. */
+
+.theory-toolbar {
+  display: flex; gap: 16px; flex-wrap: wrap; align-items: end;
+  margin: 12px 0 16px;
+}
+.theory-tools-label { display: block; margin-bottom: 4px; }
+.theory-tool-buttons { display: flex; gap: 6px; flex-wrap: wrap; }
+.theory-tool {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--rule); background: var(--paper);
+  font-size: 12px; line-height: 1; user-select: none;
+}
+.theory-tool[data-active="1"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.theory-tool .swatch {
+  width: 14px; height: 14px; border-radius: 3px; display: inline-block;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+/* Region color palette — N + 1 colors (we cap N at 10).  Warm-celestial
+   spectrum so it stays in the design family. */
+.theory-region-0  { background: #d8b56a; }
+.theory-region-1  { background: #c97f6a; }
+.theory-region-2  { background: #a3b88a; }
+.theory-region-3  { background: #88a8b9; }
+.theory-region-4  { background: #b58cb1; }
+.theory-region-5  { background: #d3a279; }
+.theory-region-6  { background: #8aa97c; }
+.theory-region-7  { background: #c69f87; }
+.theory-region-8  { background: #9b95c2; }
+.theory-region-9  { background: #b8aa72; }
+
+.theory-grid-wrap { overflow-x: auto; padding: 4px; }
+.theory-grid {
+  display: grid; gap: 2px; background: var(--rule);
+  border: 1px solid var(--rule);
+  margin: 0 auto; width: max-content;
+  --cell: 36px;
+}
+.theory-cell {
+  width: var(--cell); height: var(--cell);
+  display: flex; align-items: center; justify-content: center;
+  position: relative; cursor: pointer;
+  background: var(--bg-2);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 14px; line-height: 1;
+  user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.theory-cell.has-star::before {
+  content: '★';
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--ink); font-size: calc(var(--cell) * 0.7);
+  text-shadow: 0 0 2px rgba(255, 255, 255, 0.6);
+}
+.theory-cell.pick-marked .pick-num {
+  position: relative; z-index: 1;
+  background: var(--ink); color: var(--bg);
+  width: 18px; height: 18px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px;
+}
+
+/* Locked board (pick-order mode): cells aren't paintable */
+.theory-grid[data-mode="pick"] .theory-cell { cursor: pointer; }
+.theory-grid[data-mode="pick"] .theory-cell:not(.has-star) { cursor: default; }
+
+@media (max-width: 480px) {
+  .theory-grid { --cell: 30px; }
+}

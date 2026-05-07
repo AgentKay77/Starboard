@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% set active_nav = 'theories' %}
+{% block title %}Theories · {{ day_date }}{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='solve-theory.css') }}" />
+{% endblock %}
+
+{% macro board_grid(board, pick_order) %}
+  {% set ns = namespace(picks={}) %}
+  {% if pick_order %}
+    {% for s in pick_order %}
+      {% set _ = ns.picks.update({(s[0], s[1]): loop.index}) %}
+    {% endfor %}
+  {% endif %}
+  {% set star_pairs = [] %}
+  {% for s in board.stars %}{% set _ = star_pairs.append((s[0], s[1])) %}{% endfor %}
+  <div class="theory-grid" style="--cell: 32px; grid-template-columns: repeat({{ board.size }}, var(--cell));" data-mode="pick">
+    {% for r in range(board.size) %}
+      {% for c in range(board.size) %}
+        {% set is_star = (r, c) in star_pairs %}
+        {% set pick_idx = ns.picks.get((r, c)) %}
+        <div class="theory-cell theory-region-{{ board.regions[r][c] }}{% if is_star %} has-star{% endif %}{% if pick_idx %} pick-marked{% endif %}">
+          {% if pick_idx %}<span class="pick-num">{{ pick_idx }}</span>{% endif %}
+        </div>
+      {% endfor %}
+    {% endfor %}
+  </div>
+{% endmacro %}
+
+{% block content %}
+
+<header class="page-h">
+  <div>
+    <span class="smallcaps">Discussion · {{ day_date }}</span>
+    <h1 class="serif">Solve theories</h1>
+    <p>How everyone tackled today's puzzle. Each player marks the order they spotted stars on the canonical board.</p>
+  </div>
+</header>
+
+{% if gated %}
+  <div class="card center" style="padding: 40px;">
+    {% if gated_reason == 'signin' %}
+      <div class="serif fs-32" style="margin-bottom: 8px;">Sign in to see today's theories.</div>
+      <p class="muted">Solve theories are visible to league members only.</p>
+      <p style="margin-top: 16px;">
+        <a class="btn primary lg" href="{{ url_for('auth.login') }}">Sign in</a>
+      </p>
+    {% else %}
+      <div class="serif fs-32" style="margin-bottom: 8px;">Submit your time first.</div>
+      <p class="muted">Theories for {{ day_date }} unlock once you've logged a result for the day — DNF counts.</p>
+      <p style="margin-top: 16px;">
+        <a class="btn primary lg" href="{{ url_for('submit.submit') }}">Submit time</a>
+      </p>
+    {% endif %}
+  </div>
+
+{% elif not board %}
+  <div class="card center" style="padding: 40px;">
+    <div class="serif fs-32" style="margin-bottom: 8px;">No theories yet for {{ day_date }}.</div>
+    <p class="muted">The first player to log a solve theory defines the day's canonical board.</p>
+    <p style="margin-top: 16px;">
+      <a class="btn primary lg" href="{{ url_for('submit.submit') }}">Add yours</a>
+    </p>
+  </div>
+
+{% else %}
+  <section class="card flush" style="margin-bottom: 24px;">
+    <div style="padding: var(--pad-card); border-bottom: 1px solid var(--rule);">
+      <div class="row between baseline">
+        <div>
+          <span class="smallcaps">Canonical board</span>
+          <div class="serif fs-22">{{ board.size }}×{{ board.size }} · {{ theories|length }} theor{{ 'y' if theories|length == 1 else 'ies' }}</div>
+        </div>
+        <span class="muted fs-13">First filled {{ board.created_at[:10] }}</span>
+      </div>
+    </div>
+    <div style="padding: var(--pad-card);">
+      {{ board_grid(board, none) }}
+    </div>
+  </section>
+
+  <section class="stack stack-24">
+    {% for t in theories %}
+      <article class="card flush">
+        <div style="padding: var(--pad-card); border-bottom: 1px solid var(--rule);">
+          <div class="row between baseline">
+            <div class="serif fs-22">
+              {% if t.player_id %}
+                <a href="{{ url_for('public.player_view', player_id=t.player_id) }}">{{ t.author_label }}</a>
+              {% else %}{{ t.author_label }}{% endif %}
+            </div>
+            <span class="muted fs-13 num">{{ t.created_at[:10] }}</span>
+          </div>
+          <div class="smallcaps" style="margin-top: 4px;">
+            {{ t.pick_order|length }}/{{ board.stars|length }} stars marked
+          </div>
+        </div>
+        <div class="theory-row" style="padding: var(--pad-card); display: grid; grid-template-columns: minmax(0, max-content) minmax(200px, 1fr); gap: 24px; align-items: start;">
+          {{ board_grid(board, t.pick_order) }}
+          <div class="muted" style="white-space: pre-wrap; line-height: 1.55; min-width: 0;">{{ t.notes or '— no notes —' }}</div>
+        </div>
+      </article>
+    {% endfor %}
+  </section>
+{% endif %}
+
+<style>
+@media (max-width: 600px) {
+  .theory-row { grid-template-columns: 1fr !important; }
+}
+</style>
+
+{% endblock %}
