@@ -132,3 +132,22 @@ def connect(path: str | Path) -> sqlite3.Connection:
 def init_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
     conn.commit()
+    # Column-level migrations layered on top of the CREATE-IF-NOT-EXISTS
+    # baseline. SQLite's `ALTER TABLE ADD COLUMN` is idempotent only via a
+    # PRAGMA-guarded helper, since it errors on a re-run.
+    _ensure_column(
+        conn,
+        "submissions",
+        "assisted",
+        "INTEGER NOT NULL DEFAULT 0",
+    )
+
+
+def _ensure_column(
+    conn: sqlite3.Connection, table: str, column: str, decl: str
+) -> None:
+    cols = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column in cols:
+        return
+    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+    conn.commit()

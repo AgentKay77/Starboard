@@ -45,6 +45,23 @@
       <span class="hint">Use <code>m:ss</code> or raw seconds. Decimal seconds work too.</span>
     </div>
 
+    {# Honor pledge — only meaningful for completed solves. JS hides this
+       fieldset when status=DNF since the question doesn't apply. #}
+    <fieldset class="field" id="method-field" style="border: 0; padding: 0; margin-bottom: 16px;">
+      <legend>Honor pledge</legend>
+      <div class="stack stack-8" style="margin-top: 6px;">
+        <label class="row" style="gap: 10px; cursor: pointer;">
+          <input type="radio" name="solve_method" value="clean" id="method-clean" />
+          <span class="fs-14">I am telling the truth and did not use checks or hints.</span>
+        </label>
+        <label class="row" style="gap: 10px; cursor: pointer;">
+          <input type="radio" name="solve_method" value="assisted" id="method-assisted" />
+          <span class="fs-14">I used checks/hints — count this as a DNF.</span>
+        </label>
+      </div>
+      <span class="hint">An assisted solve still records your time so it shows on your profile, but the rating system treats it as a DNF.</span>
+    </fieldset>
+
     {# ───── Solve Theory (optional) ───── #}
     <fieldset id="solve-theory" class="field" style="border: 0; padding: 0; margin: 24px 0 0;"
               data-existing-board="{{ 1 if existing_board else 0 }}"
@@ -119,15 +136,28 @@
   const dnf = document.getElementById('status-dnf');
   const timeField = document.getElementById('time-field');
   const timeInput = timeField.querySelector('input[name="time"]');
+  const methodField = document.getElementById('method-field');
+  const methodInputs = methodField.querySelectorAll('input[name="solve_method"]');
+
   function sync() {
     if (dnf.checked) {
+      // DNF means "didn't finish" — time + honor pledge don't apply.
       timeField.style.opacity = '0.4';
       timeField.style.pointerEvents = 'none';
       timeInput.required = false;
+      methodField.style.opacity = '0.4';
+      methodField.style.pointerEvents = 'none';
+      methodInputs.forEach((el) => { el.required = false; });
     } else {
       timeField.style.opacity = '';
       timeField.style.pointerEvents = '';
       timeInput.required = true;
+      methodField.style.opacity = '';
+      methodField.style.pointerEvents = '';
+      // Make the radio group required without forcing a default — the
+      // server rejects submissions without a chosen method, and we want
+      // the user to consciously pick.
+      methodInputs.forEach((el) => { el.required = true; });
     }
   }
   document.querySelectorAll('input[name="status"]').forEach((el) => el.addEventListener('change', sync));

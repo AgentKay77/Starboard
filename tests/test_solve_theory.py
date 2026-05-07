@@ -7,7 +7,7 @@ from datetime import date
 import pytest
 from argon2 import PasswordHasher
 
-from starboard import theories
+from starboard import clock, theories
 from starboard.app import create_app
 from starboard.config import Config
 from starboard.db import connect, init_schema
@@ -198,7 +198,7 @@ def test_first_user_creates_canonical_board_with_theory(app, monkeypatch):
         data = {
             "date": today,
             "player_id": "1",
-            "status": "completed",
+            "status": "completed", "solve_method": "clean",
             "time": "1:30",
             **_board_payload(size, regions, stars),
             "notes": "looked at the corners first",
@@ -231,7 +231,7 @@ def test_second_user_uses_existing_board(app):
     with app.test_client() as cl:
         _login(cl, "alice")
         cl.post("/submit", data={
-            "date": today, "player_id": "1", "status": "completed", "time": "1:30",
+            "date": today, "player_id": "1", "status": "completed", "solve_method": "clean", "time": "1:30",
             **_board_payload(size, regions, stars),
         })
     with app.test_client() as cl:
@@ -239,7 +239,7 @@ def test_second_user_uses_existing_board(app):
         # Bob submits only pick_order — no regions/stars.
         bob_pick = json.dumps([list(stars[0]), list(stars[3])])
         r = cl.post("/submit", data={
-            "date": today, "player_id": "2", "status": "completed", "time": "2:00",
+            "date": today, "player_id": "2", "status": "completed", "solve_method": "clean", "time": "2:00",
             "solve_theory": "on", "pick_order_json": bob_pick,
             "notes": "spotted the bottom row first",
         })
@@ -260,7 +260,7 @@ def test_invalid_theory_does_not_block_time(app):
     with app.test_client() as cl:
         _login(cl, "alice")
         r = cl.post("/submit", data={
-            "date": today, "player_id": "1", "status": "completed", "time": "1:30",
+            "date": today, "player_id": "1", "status": "completed", "solve_method": "clean", "time": "1:30",
             "solve_theory": "on", "size": "7",
             "regions_json": "not json",
             "stars_json": "[]", "pick_order_json": "[]",
@@ -287,12 +287,12 @@ def test_theory_upsert_on_resubmit(app):
     with app.test_client() as cl:
         _login(cl, "alice")
         cl.post("/submit", data={
-            "date": today, "player_id": "1", "status": "completed", "time": "1:30",
+            "date": today, "player_id": "1", "status": "completed", "solve_method": "clean", "time": "1:30",
             **_board_payload(size, regions, stars), "notes": "first try",
         })
         # Resubmit with different notes
         cl.post("/submit", data={
-            "date": today, "player_id": "1", "status": "completed", "time": "1:25",
+            "date": today, "player_id": "1", "status": "completed", "solve_method": "clean", "time": "1:25",
             "solve_theory": "on",
             "pick_order_json": json.dumps([list(stars[0])]),
             "notes": "second try",
@@ -315,7 +315,7 @@ def test_theories_page_gates_users_without_submission(app):
     with app.test_client() as cl:
         _login(cl, "alice")
         cl.post("/submit", data={
-            "date": today, "player_id": "1", "status": "completed", "time": "1:30",
+            "date": today, "player_id": "1", "status": "completed", "solve_method": "clean", "time": "1:30",
             **_board_payload(size, regions, stars),
         })
 
@@ -351,7 +351,7 @@ def test_admin_reset_board_cascades(app):
     with app.test_client() as cl:
         _login(cl, "alice")
         cl.post("/submit", data={
-            "date": today, "player_id": "1", "status": "completed", "time": "1:30",
+            "date": today, "player_id": "1", "status": "completed", "solve_method": "clean", "time": "1:30",
             **_board_payload(size, regions, stars),
         })
 
@@ -379,5 +379,66 @@ def test_admin_reset_board_cascades(app):
         # enables it on every fresh connection.
         assert b == 0
         assert t == 0
+    finally:
+        c.close()
+
+
+# ---------- honor pledge ----------
+
+
+def test_assisted_solve_is_recorded_as_dnf_with_time_kept(app):
+    """Honor-pledge: 'I used checks/hints' converts the time into a DNF row
+    while preserving the recorded time so the player can still see it on
+    their profile, and the rating system treats it as a DNF."""
+    today = clock.local_today().isoformat()
+    with app.test_client() as cl:
+        _login(cl, "alice")
+        r = cl.post(
+            "/submit",
+            data={
+                "date": today, "player_id": "1",
+                "status": "completed", "solve_method": "assisted",
+                "time": "1:30",
+            },
+            follow_redirects=False,
+        )
+        assert r.status_code == 302
+
+    db_path = app.config["DATABASE_PATH"]
+    c = connect(db_path)
+    try:
+        row = c.execute(
+            "SELECT status, time_seconds, assisted FROM submissions WHERE player_id = 1"
+        ).fetchone()
+        assert row["status"] == "dnf"
+        assert row["assisted"] == 1
+        # Time kept on the DNF row so it shows on the player's profile.
+        assert row["time_seconds"] is not None
+        assert abs(row["time_seconds"] - 90.0) < 0.01
+    finally:
+        c.close()
+
+
+def test_completed_without_method_is_rejected(app):
+    """A completed-status submission without a method choice flashes an
+    error and writes nothing — the user has to consciously pick one."""
+    today = clock.local_today().isoformat()
+    with app.test_client() as cl:
+        _login(cl, "alice")
+        r = cl.post(
+            "/submit",
+            data={
+                "date": today, "player_id": "1",
+                "status": "completed", "time": "1:30",
+                # no solve_method
+            },
+            follow_redirects=False,
+        )
+        assert r.status_code == 302  # redirect back to /submit with flash
+
+    c = connect(app.config["DATABASE_PATH"])
+    try:
+        n = c.execute("SELECT COUNT(*) FROM submissions").fetchone()[0]
+        assert n == 0
     finally:
         c.close()

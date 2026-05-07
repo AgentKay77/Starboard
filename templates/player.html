@@ -255,10 +255,16 @@
             </td>
             <td>
               <span class="smallcaps" style="color: {% if s.kind == 'completed' %}var(--ink){% elif s.kind == 'dnf' %}var(--accent){% else %}var(--accent-2){% endif %}">
-                {{ 'done' if s.kind == 'completed' else s.kind }}
+                {% if s.kind == 'completed' %}done
+                {%- elif s.kind == 'dnf' and s.assisted %}DNF · hints
+                {%- else %}{{ s.kind }}{% endif %}
               </span>
             </td>
-            <td class="ralign num">{{ s.time_str if s.kind == 'completed' else '—' }}</td>
+            <td class="ralign num">
+              {% if s.kind == 'completed' %}{{ s.time_str }}
+              {%- elif s.kind == 'dnf' and s.assisted and s.time_seconds %}<span class="muted-2">{{ s.time_str }}</span>
+              {%- else %}—{% endif %}
+            </td>
             <td class="ralign num muted hidden-sm">{{ s.rank or '—' }}</td>
             <td class="ralign num muted hidden-sm">{{ s.z|zscore }}</td>
             <td class="ralign">{{ delta(s.delta) }}</td>

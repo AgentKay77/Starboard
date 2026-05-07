@@ -165,6 +165,24 @@ def _handle_post(conn, today, earliest, _players):
             flash("Time must be positive.", "error")
             return redirect(url_for("submit.submit"))
 
+    # Honor pledge: when status='completed' the user must affirm whether the
+    # solve was clean or assisted (used checks/hints). An assisted solve is
+    # converted to a DNF for rating purposes, but we keep the time so the
+    # player can see what they hit on their profile.
+    raw_method = (request.form.get("solve_method") or "").strip()
+    assisted = 0
+    if raw_status == "completed":
+        if raw_method not in ("clean", "assisted"):
+            flash(
+                "Pick whether your solve was clean or used checks/hints.",
+                "error",
+            )
+            return redirect(url_for("submit.submit"))
+        if raw_method == "assisted":
+            raw_status = "dnf"
+            assisted = 1
+            # `seconds` stays — it's stored on the DNF row for context.
+
     day_row = conn.execute(
         "SELECT id FROM puzzle_days WHERE date = ?", (the_date.isoformat(),)
     ).fetchone()
@@ -203,16 +221,17 @@ def _handle_post(conn, today, earliest, _players):
     if existing:
         conn.execute(
             """UPDATE submissions SET time_seconds = ?, status = ?,
-               submitted_at = ?, submitted_by_user_id = ? WHERE id = ?""",
-            (seconds, raw_status, now, current_user.id, existing["id"]),
+               submitted_at = ?, submitted_by_user_id = ?, assisted = ?
+               WHERE id = ?""",
+            (seconds, raw_status, now, current_user.id, assisted, existing["id"]),
         )
     else:
         conn.execute(
             """INSERT INTO submissions
                    (player_id, day_id, time_seconds, status, submitted_at,
-                    submitted_by_user_id)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (pid, day_id, seconds, raw_status, now, current_user.id),
+                    submitted_by_user_id, assisted)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (pid, day_id, seconds, raw_status, now, current_user.id, assisted),
         )
     conn.commit()
     apr.recompute_all_ratings(conn)
@@ -222,7 +241,14 @@ def _handle_post(conn, today, earliest, _players):
     theory_status = _maybe_save_theory(conn, day_id, the_date.isoformat())
 
     if raw_status == "dnf":
-        flash(f"Logged a DNF for {the_date.isoformat()}.", "info")
+        if assisted:
+            flash(
+                f"Recorded {queries.format_time(seconds)} as a DNF "
+                f"for {the_date.isoformat()} (used checks/hints — honor pledge).",
+                "info",
+            )
+        else:
+            flash(f"Logged a DNF for {the_date.isoformat()}.", "info")
     else:
         flash(
             f"Recorded {queries.format_time(seconds)} for {the_date.isoformat()}.",

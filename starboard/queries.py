@@ -251,7 +251,7 @@ def player_profile(conn: sqlite3.Connection, player_id: int) -> dict | None:
     # Recent activity: pull from rating_history (covers completed/dnf/absent)
     recent_activity_rows = conn.execute(
         """SELECT pd.date, pd.id AS day_id, rh.kind, rh.actual_z, rh.delta,
-                  s.time_seconds, s.submitted_at
+                  s.time_seconds, s.submitted_at, s.assisted
            FROM rating_history rh
            JOIN puzzle_days pd ON pd.id = rh.day_id
            LEFT JOIN submissions s
@@ -271,10 +271,12 @@ def player_profile(conn: sqlite3.Connection, player_id: int) -> dict | None:
                      AND s2.time_seconds < ?""",
                 (r["day_id"], r["time_seconds"]),
             ).fetchone()[0]
+        assisted = bool(r["assisted"]) if r["assisted"] is not None else False
         recent.append(
             {
                 "date": r["date"],
                 "kind": r["kind"],
+                "assisted": assisted,
                 "time_seconds": r["time_seconds"],
                 "time_str": format_time(r["time_seconds"]) if r["time_seconds"] else "—",
                 "z": r["actual_z"],
@@ -617,7 +619,7 @@ def latest_day(conn: sqlite3.Connection) -> dict | None:
     if not row:
         return None
     rows = conn.execute(
-        """SELECT s.time_seconds, s.status, p.name, p.display_name, p.id AS pid
+        """SELECT s.time_seconds, s.status, s.assisted, p.name, p.display_name, p.id AS pid
            FROM submissions s
            JOIN players p ON p.id = s.player_id
            WHERE s.day_id = ?
@@ -629,15 +631,23 @@ def latest_day(conn: sqlite3.Connection) -> dict | None:
     rank = 0
     for r in rows:
         is_completed = r["status"] == "completed"
+        assisted = bool(r["assisted"]) if r["assisted"] is not None else False
         if is_completed:
             rank += 1
+        if is_completed:
+            label = format_time(r["time_seconds"])
+        elif assisted and r["time_seconds"] is not None:
+            label = f"DNF · hints ({format_time(r['time_seconds'])})"
+        else:
+            label = "DNF"
         entries.append(
             {
                 "player_id": r["pid"],
                 "display_name": _display(r),
                 "status": r["status"],
+                "assisted": assisted,
                 "time_seconds": r["time_seconds"] if is_completed else None,
-                "time_str": format_time(r["time_seconds"]) if is_completed else "DNF",
+                "time_str": label,
                 "rank": rank if is_completed else None,
             }
         )
