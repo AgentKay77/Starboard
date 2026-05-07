@@ -2,34 +2,36 @@
 {% block title %}Sign up{% endblock %}
 {% block content %}
 
-<div class="max-w-sm mx-auto">
-  <h1 class="font-display text-3xl tracking-wider uppercase mb-1">Sign up</h1>
-  <p class="text-slate-400 text-sm mb-5">Follow the league. Claim a player profile from your account page after signing in.</p>
+<div class="narrow">
+  <div class="auth-head">
+    <span class="smallcaps">{{ site_name }} · New account</span>
+    <h1 class="serif">Join the league</h1>
+  </div>
 
-  <form method="post" class="scoreboard p-5 space-y-4">
-    <label class="block">
-      <span class="text-xs font-display tracking-widest uppercase text-slate-400">Email</span>
-      <input type="email" name="email" required autocomplete="email"
-             class="mt-1 w-full bg-navy-800 border border-white/10 rounded px-3 py-2 text-white" />
-    </label>
-    <label class="block">
-      <span class="text-xs font-display tracking-widest uppercase text-slate-400">Username</span>
-      <input type="text" name="username" required autocomplete="username" minlength="2" maxlength="40"
-             class="mt-1 w-full bg-navy-800 border border-white/10 rounded px-3 py-2 text-white" />
-    </label>
-    <label class="block">
-      <span class="text-xs font-display tracking-widest uppercase text-slate-400">Password</span>
-      <input type="password" name="password" required autocomplete="new-password" minlength="8"
-             class="mt-1 w-full bg-navy-800 border border-white/10 rounded px-3 py-2 text-white" />
-      <span class="text-[10px] text-slate-500">8 characters minimum.</span>
-    </label>
-    <button type="submit" class="w-full bg-accent hover:bg-red-700 text-white font-display tracking-widest uppercase py-2.5 rounded">
-      Create account
-    </button>
-    <p class="text-xs text-center text-slate-400">
-      Already have one? <a href="{{ url_for('auth.login') }}" class="text-accent hover:underline">Sign in</a>.
+  <form method="post" class="card">
+    <div class="field">
+      <label for="email">Email</label>
+      <input id="email" type="email" name="email" required autocomplete="email" />
+    </div>
+    <div class="field">
+      <label for="username">Username</label>
+      <input id="username" type="text" name="username" required autocomplete="username" minlength="2" maxlength="40" />
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input id="password" type="password" name="password" required autocomplete="new-password" minlength="8" />
+      <span class="hint">8 characters minimum.</span>
+    </div>
+    <p class="muted" style="font-size: 12px; line-height: 1.5; margin: 0 0 18px;">
+      Sign-up gives you read access plus the ability to claim a roster profile.
+      Submitting times yourself requires the league admin to flip a flag.
     </p>
+    <button type="submit" class="btn primary lg block">Create account</button>
   </form>
+
+  <p class="center muted" style="margin-top: 18px; font-size: 13px;">
+    Already have one? <a href="{{ url_for('auth.login') }}" style="color: var(--accent-2)">Sign in</a>.
+  </p>
 </div>
 
 {% endblock %}

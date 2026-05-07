@@ -1,0 +1,36 @@
+{# Admin pages keep their original Tailwind-based styling — only Hunter sees
+   them and the public design rewrite stops at the user surfaces. #}
+{% extends "base.html" %}
+
+{% block extra_head %}
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          navy: { 950: "#1f1b16", 900: "#221c16", 800: "#3a3329", 700: "#6a5f50" },
+          accent: { DEFAULT: "#c9a25b", soft: "rgba(201, 162, 91, 0.15)" },
+        },
+        fontFamily: {
+          display: ["'Instrument Serif'", "Georgia", "serif"],
+          body: ["'Söhne'", "system-ui", "sans-serif"],
+          mono: ["'JetBrains Mono'", "ui-monospace", "monospace"],
+        },
+      },
+    },
+  };
+</script>
+<style>
+  .scoreboard { background: var(--paper); border: 1px solid var(--rule); border-radius: var(--radius); }
+  .numeral { font-family: 'JetBrains Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  .text-white, .text-slate-100, .text-slate-200, .text-slate-300 { color: var(--ink); }
+  .text-slate-400, .text-slate-500 { color: var(--ink-3); }
+  .border-white\/5, .border-white\/10 { border-color: var(--rule-soft); }
+  input, select, textarea { background: var(--bg) !important; color: var(--ink) !important;
+    border-color: var(--rule) !important; }
+  .bg-navy-800 { background: var(--bg-2) !important; }
+  .bg-accent { background: var(--ink) !important; color: var(--bg) !important; }
+  .hover\:bg-red-700:hover { background: var(--ink-2) !important; }
+</style>
+{% endblock %}

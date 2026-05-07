@@ -2,28 +2,27 @@
 {% block title %}Sign in{% endblock %}
 {% block content %}
 
-<div class="max-w-sm mx-auto">
-  <h1 class="font-display text-3xl tracking-wider uppercase mb-1">Sign in</h1>
-  <p class="text-slate-400 text-sm mb-5">Welcome back to {{ site_name }}.</p>
+<div class="narrow">
+  <div class="auth-head">
+    <span class="smallcaps">{{ site_name }} · Sign in</span>
+    <h1 class="serif">Welcome back</h1>
+  </div>
 
-  <form method="post" class="scoreboard p-5 space-y-4">
-    <label class="block">
-      <span class="text-xs font-display tracking-widest uppercase text-slate-400">Email or username</span>
-      <input type="text" name="identifier" required autocomplete="username"
-             class="mt-1 w-full bg-navy-800 border border-white/10 rounded px-3 py-2 text-white" />
-    </label>
-    <label class="block">
-      <span class="text-xs font-display tracking-widest uppercase text-slate-400">Password</span>
-      <input type="password" name="password" required autocomplete="current-password"
-             class="mt-1 w-full bg-navy-800 border border-white/10 rounded px-3 py-2 text-white" />
-    </label>
-    <button type="submit" class="w-full bg-accent hover:bg-red-700 text-white font-display tracking-widest uppercase py-2.5 rounded">
-      Sign in
-    </button>
-    <p class="text-xs text-center text-slate-400">
-      No account? <a href="{{ url_for('auth.signup') }}" class="text-accent hover:underline">Sign up</a>.
-    </p>
+  <form method="post" class="card">
+    <div class="field">
+      <label for="identifier">Email or username</label>
+      <input id="identifier" type="text" name="identifier" required autocomplete="username" />
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input id="password" type="password" name="password" required autocomplete="current-password" />
+    </div>
+    <button type="submit" class="btn primary lg block">Sign in</button>
   </form>
+
+  <p class="center muted" style="margin-top: 18px; font-size: 13px;">
+    No account? <a href="{{ url_for('auth.signup') }}" style="color: var(--accent-2)">Sign up</a>.
+  </p>
 </div>
 
 {% endblock %}

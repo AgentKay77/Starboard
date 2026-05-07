@@ -1,10 +1,12 @@
 """Flask app factory + the public blueprint."""
 from __future__ import annotations
 
+import math
 from datetime import date
 
 from flask import Blueprint, Flask, abort, current_app, g, render_template
 from flask_login import current_user
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from starboard import db as db_module
 from starboard import queries
@@ -31,6 +33,12 @@ def create_app(config: Config | None = None) -> Flask:
     app.config["SUBMISSION_LOOKBACK_DAYS"] = cfg.submission_lookback_days
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["SESSION_COOKIE_SECURE"] = True
+    app.config["PREFERRED_URL_SCHEME"] = "https"
+
+    # Cloudflare tunnel terminates TLS and forwards plain HTTP to localhost.
+    # Trust X-Forwarded-Proto/Host so url_for emits https://www.starboard.day.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
     login_manager.init_app(app)
     login_manager.login_view = "auth.login"
@@ -97,6 +105,10 @@ def create_app(config: Config | None = None) -> Flask:
             return "—"
         sign = "+" if value >= 0 else ""
         return f"{sign}{value:.2f}σ"
+
+    # Math filters for SVG layout in templates (constellation graph).
+    app.jinja_env.filters["cosf"] = lambda v: math.cos(float(v))
+    app.jinja_env.filters["sinf"] = lambda v: math.sin(float(v))
 
     return app
 

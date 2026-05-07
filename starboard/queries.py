@@ -378,11 +378,24 @@ def _attendance_heatmap(
 
 
 def h2h_matrix(conn: sqlite3.Connection) -> dict:
-    """Wins[a, b] = 'a finished ahead of b' on shared days. Completed only."""
+    """Wins[a, b] = 'a finished ahead of b' on shared days. Completed only.
+    Returned `players` carry their current APR so the constellation graph can
+    size nodes by rating without re-querying."""
     players = conn.execute(
         "SELECT id, name, display_name FROM players WHERE active = 1 ORDER BY id"
     ).fetchall()
     pid_list = [p["id"] for p in players]
+
+    latest_ratings: dict[int, float] = {}
+    for p in players:
+        cur = conn.execute(
+            """SELECT rh.rating_after FROM rating_history rh
+               JOIN puzzle_days pd ON pd.id = rh.day_id
+               WHERE rh.player_id = ? ORDER BY pd.date DESC LIMIT 1""",
+            (p["id"],),
+        ).fetchone()
+        latest_ratings[p["id"]] = cur["rating_after"] if cur else INITIAL_RATING
+
     wins: dict[tuple[int, int], int] = defaultdict(int)
     rows = conn.execute(
         """SELECT day_id, player_id, time_seconds FROM submissions
@@ -397,8 +410,11 @@ def h2h_matrix(conn: sqlite3.Connection) -> dict:
             for b_pid, _bt in subs[i + 1 :]:
                 wins[(a_pid, b_pid)] += 1
     return {
-        "players": [dict(p) | {"display_name": _display(p)} for p in players],
-        "wins": wins,
+        "players": [
+            dict(p) | {"display_name": _display(p), "rating": latest_ratings[p["id"]]}
+            for p in players
+        ],
+        "wins": dict(wins),
         "pid_list": pid_list,
     }
 

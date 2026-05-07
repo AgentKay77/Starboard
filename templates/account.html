@@ -2,56 +2,63 @@
 {% block title %}Account{% endblock %}
 {% block content %}
 
-<div class="max-w-md mx-auto space-y-5">
-  <header>
-    <h1 class="font-display text-3xl tracking-wider uppercase">{{ current_user.username }}</h1>
-    <p class="text-slate-400 text-sm">{{ current_user.email }}{% if current_user.is_admin %} <span class="ml-2 text-accent text-xs uppercase font-display tracking-widest">admin</span>{% endif %}</p>
+<div style="max-width: 720px; margin: 0 auto;" class="stack stack-24">
+
+  <header class="page-h">
+    <div>
+      <span class="smallcaps">Your account</span>
+      <h1 class="serif">{{ current_user.username }}</h1>
+      <p>{{ current_user.email }}{% if current_user.is_admin %} · admin{% endif %}</p>
+    </div>
   </header>
 
-  <section class="scoreboard p-5">
-    <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-3">Player</h2>
+  <section class="card">
+    <div class="sec-h"><h2>Player</h2></div>
     {% if claimed_player %}
-      <div class="flex items-baseline justify-between">
-        <a href="{{ url_for('public.player_view', player_id=claimed_player.id) }}" class="text-white font-medium">
+      <div class="row between" style="padding-bottom: 12px;">
+        <a href="{{ url_for('public.player_view', player_id=claimed_player.id) }}">
           {{ claimed_player.display_name or claimed_player.name }}
         </a>
-        <span class="text-xs text-slate-400">claimed</span>
+        <span class="smallcaps">claimed</span>
       </div>
     {% elif unclaimed %}
-      <form method="post" class="space-y-3">
+      <form method="post" class="stack stack-12">
         <input type="hidden" name="action" value="claim_player" />
-        <label class="block text-sm text-slate-300">Pick a player to claim:</label>
-        <select name="player_id" class="w-full bg-navy-800 border border-white/10 rounded px-3 py-2 text-white">
-          {% for p in unclaimed %}
-            <option value="{{ p.id }}">{{ p.display_name or p.name }}</option>
-          {% endfor %}
-        </select>
-        <button type="submit" class="w-full bg-accent hover:bg-red-700 text-white font-display tracking-widest uppercase py-2 rounded">
-          Claim
-        </button>
+        <div class="field">
+          <label for="player_id">Pick a player to claim</label>
+          <select id="player_id" name="player_id">
+            {% for p in unclaimed %}
+              <option value="{{ p.id }}">{{ p.display_name or p.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit" class="btn primary lg block">Claim</button>
       </form>
     {% else %}
-      <p class="text-slate-500 text-sm italic">No unclaimed players available.</p>
+      <p class="muted serif-it">No unclaimed players available.</p>
     {% endif %}
   </section>
 
-  <section class="scoreboard p-5">
-    <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-3">Change password</h2>
-    <form method="post" class="space-y-3">
+  <section class="card">
+    <div class="sec-h"><h2>Change password</h2></div>
+    <form method="post">
       <input type="hidden" name="action" value="change_password" />
-      <input type="password" name="current_password" placeholder="Current password" required
-             class="w-full bg-navy-800 border border-white/10 rounded px-3 py-2 text-white" />
-      <input type="password" name="new_password" placeholder="New password" minlength="8" required
-             class="w-full bg-navy-800 border border-white/10 rounded px-3 py-2 text-white" />
-      <button type="submit" class="w-full bg-white/10 hover:bg-white/15 text-slate-100 font-display tracking-widest uppercase py-2 rounded">
-        Update password
-      </button>
+      <div class="field">
+        <label for="current_password">Current password</label>
+        <input id="current_password" type="password" name="current_password" required />
+      </div>
+      <div class="field">
+        <label for="new_password">New password</label>
+        <input id="new_password" type="password" name="new_password" minlength="8" required />
+      </div>
+      <button type="submit" class="btn lg block">Update password</button>
     </form>
   </section>
 
   <form method="post" action="{{ url_for('auth.logout') }}">
-    <button type="submit" class="w-full text-slate-400 hover:text-rose-400 text-sm py-3">Sign out</button>
+    <button type="submit" class="btn danger lg block">Sign out</button>
   </form>
+
 </div>
 
 {% endblock %}

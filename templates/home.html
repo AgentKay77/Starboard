@@ -1,95 +1,216 @@
 {% extends "base.html" %}
-{% block title %}Home{% endblock %}
+{% set active_nav = 'home' %}
+{% block title %}Today{% endblock %}
 {% block content %}
 
-{# ───── Hero: current leader ───── #}
-<section class="scoreboard ticker-top p-5 sm:p-7 mb-5">
-  <div class="text-xs font-display tracking-[0.3em] uppercase text-slate-400">Current APR Leader</div>
-  {% if leader %}
-    <div class="mt-1 flex items-end justify-between gap-4 flex-wrap">
-      <a href="{{ url_for('public.player_view', player_id=leader.player_id) }}" class="block">
-        <div class="font-display text-3xl sm:text-5xl tracking-wide text-white">{{ leader.display_name }}</div>
-        <div class="text-slate-400 text-sm">Rank 1 · {{ leader.attendance|pct }} attendance</div>
-      </a>
-      <div class="numeral text-5xl sm:text-7xl rank-1">{{ leader.rating|rating }}</div>
-    </div>
-  {% else %}
-    <div class="text-slate-400 mt-2">No submissions yet — once times come in, the leader shows up here.</div>
-  {% endif %}
-</section>
+{% from "_glyphs.html" import star_mark, trophy, trophy_chip, mag_star, sparkline, delta, chevron_right %}
 
-{# ───── Podium top-3 ───── #}
-{% if podium|length > 1 %}
-<section class="grid grid-cols-3 gap-3 mb-5">
-  {% for p in podium %}
-    <a href="{{ url_for('public.player_view', player_id=p.player_id) }}" class="scoreboard p-4 text-center">
-      <div class="font-display text-2xl rank-{{ p.rank }}">{{ p.rank }}</div>
-      <div class="font-display text-base sm:text-lg text-white truncate">{{ p.display_name }}</div>
-      <div class="numeral text-xl sm:text-2xl text-slate-200">{{ p.rating|rating }}</div>
-    </a>
-  {% endfor %}
+<div class="stack stack-32">
+
+{# ───── Editorial hero ───── #}
+{% if leader %}
+<section class="card flush">
+  <div class="grid hero-grid" style="grid-template-columns: 1.4fr 1fr; gap: 0; min-height: 320px;">
+    <div style="padding: var(--pad-card); padding-top: 28px; display: flex; flex-direction: column; justify-content: space-between;">
+      <div>
+        <div class="row" style="gap: 10px; flex-wrap: wrap;">
+          <span class="smallcaps">No. {{ stats.total_days }} · Day Bulletin</span>
+          {% if current_week and current_week.days_played %}
+            <span class="pill live">Live · Wk of {{ current_week.week_start[5:] }}</span>
+          {% endif %}
+        </div>
+        <div class="serif" style="margin-top: 18px; font-size: clamp(48px, 6.5vw, 88px); line-height: 0.94;">
+          <a href="{{ url_for('public.player_view', player_id=leader.player_id) }}">{{ leader.display_name }}</a>
+          <span class="serif-it muted" style="font-size: 0.42em; display: block; margin-top: 8px;">
+            holds the brightest star.
+          </span>
+        </div>
+        <p class="muted" style="max-width: 46ch; font-size: 14px; line-height: 1.55; margin-top: 18px;">
+          {% if podium|length > 1 %}
+          {{ leader.display_name }} sits
+          <span class="num">{{ (leader.rating - podium[1].rating)|round|int }}</span>
+          APR clear of {{ podium[1].display_name }}.
+          {% endif %}
+          {% if latest_day and latest_day.winner_name %}
+          The most recent {{ latest_day.field_size }}-player skirmish was won in
+          <span class="num">{{ latest_day.winner_time_str }}</span>.
+          {% endif %}
+        </p>
+      </div>
+      <div class="row wrap" style="margin-top: 28px; gap: 24px;">
+        <a class="btn primary" href="{{ url_for('public.standings_view') }}">
+          See full standings {{ chevron_right(11) }}
+        </a>
+        <span class="smallcaps">Auto-recompute on submit</span>
+      </div>
+    </div>
+
+    <div class="hero-aside" style="background: var(--bg-2); border-left: 1px solid var(--rule); padding: var(--pad-card); display: flex; flex-direction: column; gap: 16px;">
+      <div class="smallcaps">Adjusted Performance Rating</div>
+      <div class="row wrap baseline" style="gap: 16px;">
+        <div class="num serif" style="font-size: 72px; line-height: 0.9;">{{ leader.rating|rating }}</div>
+        <span style="font-size: 16px;">{{ delta(leader.latest_delta) }}</span>
+      </div>
+      <hr class="hr-soft" />
+      <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div class="stack stack-4">
+          <span class="smallcaps">Attendance</span>
+          <span class="num fs-18">{{ leader.attendance|pct }}</span>
+        </div>
+        <div class="stack stack-4">
+          <span class="smallcaps">Trophies</span>
+          <span class="num fs-18">{{ leader.trophies }}</span>
+        </div>
+        <div class="stack stack-4">
+          <span class="smallcaps">Champions</span>
+          <span class="num fs-18">{{ leader.champions }}</span>
+        </div>
+        <div class="stack stack-4">
+          <span class="smallcaps">Submissions</span>
+          <span class="num fs-18">{{ leader.submissions }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% else %}
+<section class="card center">
+  <div class="serif fs-48">No submissions yet.</div>
+  <p class="muted">Once times come in, the leader takes the marquee.</p>
 </section>
 {% endif %}
 
-{# ───── Latest day & current week banner ───── #}
-<section class="grid sm:grid-cols-2 gap-3 mb-5">
-  <div class="scoreboard p-4">
-    <div class="text-xs font-display tracking-[0.3em] uppercase text-slate-400">Latest Day</div>
-    {% if latest_day %}
-      <div class="mt-1 text-slate-200 font-display text-xl">{{ latest_day.date }}</div>
-      <div class="mt-1 flex items-center justify-between">
-        <a href="{{ url_for('public.player_view', player_id=latest_day.winner_id) }}" class="text-white font-medium">
+{# ───── Podium ladder ───── #}
+{% if podium|length > 0 %}
+<section>
+  <div class="sec-h">
+    <h2>Top of the Constellation</h2>
+    <a href="{{ url_for('public.standings_view') }}" class="smallcaps" style="color: var(--accent-2)">All players →</a>
+  </div>
+  <div class="card flush">
+    <div class="grid podium-grid" style="grid-template-columns: repeat({{ podium|length }}, 1fr); gap: 0;">
+      {% for p in podium %}
+        <a href="{{ url_for('public.player_view', player_id=p.player_id) }}"
+           style="padding: var(--pad-card); {% if not loop.last %}border-right: 1px solid var(--rule);{% endif %}
+                  display: flex; flex-direction: column; gap: 12px; min-height: 180px;">
+          <div class="row between">
+            <div class="row" style="gap: 10px;">
+              <span class="serif num fs-28" style="color: {{ 'var(--accent)' if p.rank == 1 else 'var(--ink-3)' }}">
+                {{ '%02d'|format(p.rank) }}
+              </span>
+              {{ mag_star(p.rating, 24 if loop.first else 18) }}
+            </div>
+            <span class="smallcaps">{{ p.attendance|pct }} att.</span>
+          </div>
+          <div class="serif fs-32" style="line-height: 1; margin-top: 6px;">{{ p.display_name }}</div>
+          <div class="row between" style="margin-top: auto;">
+            <span class="num fs-28">{{ p.rating|rating }}</span>
+            {{ delta(p.latest_delta) }}
+          </div>
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{# ───── Two-up: latest day + current week ───── #}
+<section class="grid grid-2">
+  <div class="card">
+    <div class="row between" style="margin-bottom: 16px;">
+      <span class="smallcaps">Latest Day</span>
+      {% if latest_day %}<span class="num muted fs-13">{{ latest_day.date }}</span>{% endif %}
+    </div>
+    {% if latest_day and latest_day.winner_name %}
+      <div class="row between baseline">
+        <a href="{{ url_for('public.player_view', player_id=latest_day.winner_id) }}" class="serif fs-36">
           {{ latest_day.winner_name }}
         </a>
-        <span class="numeral text-2xl text-gold">{{ latest_day.winner_time_str }}</span>
-      </div>
-      <div class="text-xs text-slate-400 mt-1">{{ latest_day.field_size }} player{{ latest_day.field_size|pluralize if false else '' }}{% if latest_day.field_size != 1 %}s{% endif %} entered</div>
-    {% else %}
-      <div class="text-slate-400">No days played yet.</div>
-    {% endif %}
-  </div>
-
-  <div class="scoreboard ticker-top-gold p-4">
-    <div class="text-xs font-display tracking-[0.3em] uppercase text-slate-400">Current Week</div>
-    <div class="mt-1 text-slate-200 font-display text-xl">Week of {{ current_week.week_start }}</div>
-    <div class="text-xs text-slate-400">{{ current_week.days_played }} day{% if current_week.days_played != 1 %}s{% endif %} played · {{ current_week.submission_count }} submission{% if current_week.submission_count != 1 %}s{% endif %}</div>
-    {% set champ = current_week.awards.get('champion') %}
-    {% if champ %}
-      <div class="mt-3 flex items-center justify-between">
-        <div>
-          <span class="award-glyph">🏆</span>
-          <span class="text-xs uppercase font-display tracking-widest text-slate-400 ml-1">Leading Champion</span>
+        <div style="text-align: right;">
+          <div class="num serif fs-36 accent">{{ latest_day.winner_time_str }}</div>
+          <div class="smallcaps">winning time</div>
         </div>
-        <span class="font-medium text-white">{{ current_week.name_by_pid[champ.player_id] }}</span>
       </div>
-      <div class="text-right text-slate-400 numeral text-sm">{{ champ.metric_value|zscore }}</div>
+      <hr class="hr-soft" style="margin: 20px 0;" />
+      <div class="muted fs-13">Field of {{ latest_day.field_size }}</div>
     {% else %}
-      <div class="mt-3 text-slate-500 text-sm italic">Champion title still up for grabs (≥ 4 days needed).</div>
+      <p class="muted serif-it">No completed times yet.</p>
     {% endif %}
-    <a href="{{ url_for('public.weekly_view') }}" class="block mt-3 text-xs font-display tracking-widest uppercase text-accent hover:underline">Full Skirmish standings →</a>
+  </div>
+
+  <div class="card tinted">
+    <div class="row between" style="margin-bottom: 16px;">
+      <span class="smallcaps">This Week's Skirmish</span>
+      <span class="pill live">Live · day {{ current_week.days_played }}/7</span>
+    </div>
+    <div class="stack stack-12">
+      {% set show = [('champion', 'mean z'), ('lightning', 'top z'), ('iron_man', 'days played')] %}
+      {% for kind, label in show %}
+        {% set a = current_week.awards.get(kind) %}
+        <div class="row between" style="padding-bottom: 12px; border-bottom: 1px solid var(--rule-soft);">
+          <div class="row" style="gap: 12px;">
+            <span style="color: var(--ink-3)">{{ trophy(kind, 18) }}</span>
+            <div>
+              <div class="fs-14">
+                {% if a %}{{ current_week.name_by_pid.get(a.player_id, '—') }}{% else %}<span class="muted serif-it">no leader</span>{% endif %}
+              </div>
+              <div class="smallcaps" style="font-size: 9.5px;">leading {{ kind|replace('_', ' ') }}</div>
+            </div>
+          </div>
+          <div style="text-align: right;">
+            <div class="num fs-18">
+              {% if a %}{% if kind == 'iron_man' %}{{ a.metric_value|int }}{% else %}{{ '%.2f'|format(a.metric_value) }}σ{% endif %}{% else %}—{% endif %}
+            </div>
+            <div class="smallcaps" style="font-size: 9.5px;">{{ label }}</div>
+          </div>
+        </div>
+      {% endfor %}
+      <div class="serif-it muted fs-13">
+        Awards lock Monday 00:05 {{ config.WEEK_TIMEZONE }}.
+        <a href="{{ url_for('public.weekly_view') }}" style="color: var(--accent-2); margin-left: 8px">Skirmish history →</a>
+      </div>
+    </div>
   </div>
 </section>
 
-{# ───── Stat tiles ───── #}
-<section class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-  <div class="scoreboard p-4">
-    <div class="text-xs font-display tracking-widest uppercase text-slate-400">Days</div>
-    <div class="numeral text-3xl text-white">{{ stats.total_days }}</div>
+{# ───── Season ledger ───── #}
+<section>
+  <div class="sec-h">
+    <h2>Season Ledger</h2>
+    <span class="smallcaps">Through Day {{ stats.total_days }}</span>
   </div>
-  <div class="scoreboard p-4">
-    <div class="text-xs font-display tracking-widest uppercase text-slate-400">Submissions</div>
-    <div class="numeral text-3xl text-white">{{ stats.total_submissions }}</div>
-  </div>
-  <div class="scoreboard p-4">
-    <div class="text-xs font-display tracking-widest uppercase text-slate-400">Fastest Ever</div>
-    <div class="numeral text-2xl text-gold">{{ stats.fastest_time_str }}</div>
-    <div class="text-xs text-slate-400 truncate">{{ stats.fastest_player or '—' }}</div>
-  </div>
-  <div class="scoreboard p-4">
-    <div class="text-xs font-display tracking-widest uppercase text-slate-400">Most Trophies</div>
-    <div class="numeral text-3xl text-white">{{ stats.most_trophies_count }}</div>
-    <div class="text-xs text-slate-400 truncate">{{ stats.most_trophies_player or '—' }}</div>
+  <div class="card flush">
+    <div class="grid ledger-grid" style="grid-template-columns: repeat(4, 1fr); gap: 0;">
+      {% set tiles = [
+        ('Days Played', stats.total_days, '', false),
+        ('Submissions', stats.total_submissions, 'completed', false),
+        ('Fastest Ever', stats.fastest_time_str, (stats.fastest_player or '—') ~ ' · ' ~ (stats.fastest_date or ''), true),
+        ('Most Trophies', stats.most_trophies_count, stats.most_trophies_player or '—', false),
+      ] %}
+      {% for label, value, sub, accent in tiles %}
+        <div style="padding: var(--pad-card); {% if not loop.last %}border-right: 1px solid var(--rule);{% endif %}">
+          <div class="smallcaps">{{ label }}</div>
+          <div class="num serif fs-36" style="margin-top: 6px; {% if accent %}color: var(--accent);{% endif %}">{{ value }}</div>
+          <div class="smallcaps" style="margin-top: 6px; font-size: 10px;">{{ sub }}</div>
+        </div>
+      {% endfor %}
+    </div>
   </div>
 </section>
+
+</div>
+
+<style>
+@media (max-width: 800px) {
+  .hero-grid { grid-template-columns: 1fr !important; }
+  .hero-aside { border-left: none !important; border-top: 1px solid var(--rule); }
+  .podium-grid { grid-template-columns: 1fr !important; }
+  .podium-grid > a { border-right: none !important; border-bottom: 1px solid var(--rule); }
+  .podium-grid > a:last-child { border-bottom: none; }
+  .ledger-grid { grid-template-columns: 1fr 1fr !important; }
+  .ledger-grid > div:nth-child(1), .ledger-grid > div:nth-child(2) { border-bottom: 1px solid var(--rule); }
+  .ledger-grid > div:nth-child(2) { border-right: none !important; }
+}
+</style>
 
 {% endblock %}
