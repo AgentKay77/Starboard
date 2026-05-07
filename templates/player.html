@@ -1,190 +1,261 @@
 {% extends "base.html" %}
+{% set active_nav = 'standings' %}
 {% block title %}{{ profile.display_name }}{% endblock %}
 {% block content %}
 
-<header class="scoreboard ticker-top p-5 mb-5">
-  <div class="flex items-baseline justify-between flex-wrap gap-3">
-    <div>
-      <div class="font-display text-3xl sm:text-4xl text-white tracking-wide">{{ profile.display_name }}</div>
-      <div class="text-slate-400 text-sm mt-1">
-        {% if profile.rank %}Rank <span class="text-white numeral">{{ profile.rank }}</span> ·{% endif %}
-        Joined {{ profile.player.joined_date }} ·
-        {{ profile.attendance|pct }} attendance
-        {% if is_own %}<span class="ml-2 text-xs uppercase font-display tracking-widest text-accent">your profile</span>{% endif %}
+{% from "_glyphs.html" import trophy, sparkline, delta %}
+
+{% set TROPHY_KEYS = ['champion', 'iron_man', 'lightning', 'steady', 'giant_slayer'] %}
+{% set TROPHY_LABELS = {
+  'champion': 'Champion', 'iron_man': 'Iron Man', 'lightning': 'Lightning',
+  'steady': 'Steady', 'giant_slayer': 'Giant Slayer'
+} %}
+{% set total_players = profile.h2h_top5|length + 1 %}
+
+<div class="stack stack-32">
+
+{# ───── Hero ───── #}
+<header class="card flush">
+  <div class="grid profile-hero" style="grid-template-columns: 1.6fr 1fr; gap: 0;">
+    <div style="padding: var(--pad-card); display: flex; flex-direction: column; gap: 14px;">
+      <div class="row" style="gap: 12px;">
+        <span class="smallcaps">Rank</span>
+        <span class="num serif fs-22"
+              style="color: {{ 'var(--accent)' if profile.rank == 1 else 'var(--ink)' }}">
+          {% if profile.rank %}{{ '%02d'|format(profile.rank) }}{% else %}—{% endif %}
+        </span>
+        {% if is_own %}<span class="smallcaps" style="color: var(--accent-2)">Your profile</span>{% endif %}
+      </div>
+      <div class="serif" style="font-size: clamp(48px, 7vw, 88px); line-height: 0.94;">{{ profile.display_name }}</div>
+      <div class="serif-it muted fs-16">
+        {{ profile.player.name }} · joined <span class="num">{{ profile.player.joined_date }}</span>
+      </div>
+      <div class="row wrap" style="gap: 24px; margin-top: 8px; color: var(--ink-3); font-size: 13px;">
+        <span>{{ profile.attendance|pct }} attendance</span><span>·</span>
+        <span><span class="num" style="color: var(--ink)">{{ profile.status_counts.completed }}</span> completions</span><span>·</span>
+        <span><span class="num" style="color: var(--ink)">{{ profile.trophy_case|length }}</span> trophies</span>
       </div>
     </div>
-    <div class="text-right">
-      <div class="text-xs font-display tracking-widest uppercase text-slate-400">APR</div>
-      <div class="numeral text-5xl sm:text-6xl text-gold">{{ profile.rating|rating }}</div>
-      <div class="text-xs text-slate-400">peak <span class="numeral">{{ profile.peak_rating|rating }}</span></div>
+    <div class="profile-aside" style="background: var(--bg-2); border-left: 1px solid var(--rule); padding: var(--pad-card); display: flex; flex-direction: column; gap: 12px;">
+      <div class="smallcaps">Adjusted Performance Rating</div>
+      <div class="num serif accent" style="font-size: 64px; line-height: 0.9;">{{ profile.rating|rating }}</div>
+      <div class="row between wrap" style="gap: 8px;">
+        <span class="smallcaps">Peak <span class="num" style="color: var(--ink)">{{ profile.peak_rating|rating }}</span></span>
+        <span class="fs-14">{{ delta(profile.recent_activity[0].delta if profile.recent_activity else None) }}</span>
+      </div>
+      {% if profile.rating_history %}
+        {{ sparkline(profile.rating_history|map(attribute='rating_after')|list, 'var(--accent)', 240, 48) }}
+      {% endif %}
     </div>
   </div>
 </header>
 
-{# ───── Award breakdown ───── #}
-<section class="grid grid-cols-5 gap-2 mb-5">
-  {% for emoji, kind, label in [('🏆','champion','Champion'),('🔥','iron_man','Iron Man'),('⚡','lightning','Lightning'),('🎯','steady','Steady'),('🗡️','giant_slayer','Giant Slayer')] %}
-    <div class="scoreboard p-3 text-center">
-      <div class="award-glyph">{{ emoji }}</div>
-      <div class="numeral text-xl text-white">{{ profile.award_breakdown.get(kind, 0) }}</div>
-      <div class="text-[10px] uppercase tracking-widest text-slate-400">{{ label }}</div>
-    </div>
-  {% endfor %}
-</section>
-
-{# ───── Attendance heatmap ───── #}
-{% if profile.heatmap %}
-<section class="scoreboard p-4 mb-5">
-  <div class="flex items-baseline justify-between mb-3">
-    <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs">Attendance</h2>
-    <div class="flex items-center gap-3 text-[10px] uppercase tracking-widest text-slate-500">
-      <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 bg-emerald-500 rounded-sm"></span> Done</span>
-      <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 bg-yellow-500 rounded-sm"></span> DNF</span>
-      <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 bg-rose-500 rounded-sm"></span> Absent</span>
-      <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 bg-slate-700 rounded-sm"></span> N/A</span>
+{# ───── Trophy cabinet ───── #}
+<section>
+  <div class="sec-h"><h2>Trophy Cabinet</h2></div>
+  <div class="card flush">
+    <div class="grid trophy-row-grid" style="grid-template-columns: repeat(5, 1fr); gap: 0;">
+      {% for k in TROPHY_KEYS %}
+        {% set ct = profile.award_breakdown.get(k, 0) %}
+        <div class="trophy-cell" style="{% if not loop.last %}border-right: 1px solid var(--rule);{% endif %}">
+          <div class="icon" style="color: {{ 'var(--accent)' if ct else 'var(--ink-4)' }}">{{ trophy(k, 32) }}</div>
+          <div class="ct" style="color: {{ 'var(--ink)' if ct else 'var(--ink-4)' }}">{{ ct }}</div>
+          <div class="smallcaps" style="margin-top: 8px;">{{ TROPHY_LABELS[k] }}</div>
+        </div>
+      {% endfor %}
     </div>
   </div>
-  <div class="flex flex-wrap gap-1">
-    {% for cell in profile.heatmap %}
-      {% set color = 'bg-slate-700' %}
-      {% if cell.kind == 'completed' %}{% set color = 'bg-emerald-500' %}
-      {% elif cell.kind == 'dnf' %}{% set color = 'bg-yellow-500' %}
-      {% elif cell.kind == 'absent' %}{% set color = 'bg-rose-500' %}
-      {% endif %}
-      <span class="inline-block w-3.5 h-3.5 rounded-sm {{ color }}" title="{{ cell.date }}: {{ cell.kind }}"></span>
-    {% endfor %}
-  </div>
-  <div class="mt-3 grid grid-cols-4 gap-2 text-center text-xs">
-    <div><div class="numeral text-white text-lg">{{ profile.status_counts.completed }}</div><div class="text-[10px] uppercase tracking-widest text-slate-500">completed</div></div>
-    <div><div class="numeral text-yellow-300 text-lg">{{ profile.status_counts.dnf }}</div><div class="text-[10px] uppercase tracking-widest text-slate-500">DNF</div></div>
-    <div><div class="numeral text-rose-300 text-lg">{{ profile.status_counts.absent }}</div><div class="text-[10px] uppercase tracking-widest text-slate-500">absent</div></div>
-    <div><div class="numeral text-blue-300 text-lg">{{ profile.status_counts.late }}</div><div class="text-[10px] uppercase tracking-widest text-slate-500">late</div></div>
-  </div>
 </section>
-{% endif %}
 
-{# ───── Rating history chart ───── #}
-{% if profile.rating_history %}
-<section class="scoreboard p-4 mb-5">
-  <div class="text-xs font-display tracking-widest uppercase text-slate-400 mb-2">APR over time</div>
-  <div class="h-56 sm:h-72">
-    <canvas
-      data-chart="rating-history"
-      data-labels='{{ profile.rating_history|map(attribute="date")|list|tojson }}'
-      data-values='{{ profile.rating_history|map(attribute="rating_after")|list|tojson }}'
-    ></canvas>
+{# ───── APR trajectory + heatmap ───── #}
+<section class="grid two-col-stack" style="gap: 16px; grid-template-columns: 1.4fr 1fr;">
+  <div class="card">
+    <div class="sec-h" style="margin-bottom: 6px;">
+      <h2>APR Trajectory</h2>
+      <span class="smallcaps">{{ profile.rating_history|length }} days</span>
+    </div>
+    {% if profile.rating_history %}
+      {% set ratings = profile.rating_history|map(attribute='rating_after')|list %}
+      {% set vmin = (ratings|min) - 20 %}
+      {% set vmax = (ratings|max) + 20 %}
+      {% set vrange = (vmax - vmin) if vmax != vmin else 1 %}
+      {% set w = 600 %}
+      {% set h = 200 %}
+      {% set pad = 24 %}
+      {% set xstep = (w - pad * 2) / (ratings|length - 1) if ratings|length > 1 else 0 %}
+      <div style="width: 100%; overflow: hidden;">
+        <svg viewBox="0 0 {{ w }} {{ h }}" style="width: 100%; height: 220px;" preserveAspectRatio="none">
+          {% for tick in [vmin, (vmin + vmax) / 2, vmax] %}
+            {% set y = h - pad - (tick - vmin) / vrange * (h - pad * 2) %}
+            <line x1="{{ pad }}" x2="{{ w - pad }}" y1="{{ '%.1f'|format(y) }}" y2="{{ '%.1f'|format(y) }}"
+                  stroke="var(--rule-soft)" stroke-width="1"/>
+            <text x="{{ pad - 6 }}" y="{{ '%.1f'|format(y + 3) }}" font-size="9" fill="var(--ink-4)"
+                  text-anchor="end" font-family="JetBrains Mono">{{ tick|round|int }}</text>
+          {% endfor %}
+          {% set pts = [] %}
+          {% for v in ratings %}
+            {% set x = pad + loop.index0 * xstep %}
+            {% set y = h - pad - (v - vmin) / vrange * (h - pad * 2) %}
+            {% set _ = pts.append('%.1f,%.1f'|format(x, y)) %}
+          {% endfor %}
+          <polyline points="{{ pts|join(' ') }}" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round"/>
+          {% if pts %}
+            {% set last = pts[-1].split(',') %}
+            <circle cx="{{ last[0] }}" cy="{{ last[1] }}" r="3" fill="var(--accent)"/>
+          {% endif %}
+        </svg>
+      </div>
+    {% else %}
+      <p class="muted serif-it">No rating history yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="sec-h" style="margin-bottom: 6px;">
+      <h2>Star Chart</h2>
+      <span class="smallcaps">Day-by-day</span>
+    </div>
+    <p class="serif-it muted" style="font-size: 13px; margin: 4px 0 16px;">
+      Each square is a puzzle day. Filled = completed, gold = DNF, faded = absent.
+    </p>
+    {% if profile.heatmap %}
+      <div class="heat">
+        {% for cell in profile.heatmap %}
+          <span class="heat-cell {{ cell.kind }}" title="{{ cell.date }}: {{ cell.kind }}"></span>
+        {% endfor %}
+      </div>
+      <div class="row wrap" style="gap: 16px; margin-top: 16px;">
+        {% for k, label in [('completed','Done'),('dnf','DNF'),('absent','Absent')] %}
+          <span class="row" style="gap: 6px; font-size: 12px; color: var(--ink-3);">
+            <span class="heat-cell {{ k }}" style="width: 10px; height: 10px;"></span>
+            {{ label }} <span class="num" style="color: var(--ink)">{{ profile.status_counts[k] }}</span>
+          </span>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted serif-it">No activity yet.</p>
+    {% endif %}
   </div>
 </section>
-{% endif %}
 
 {# ───── Stats grid ───── #}
-<section class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-  <div class="scoreboard p-3">
-    <div class="text-[10px] uppercase tracking-widest text-slate-400">Fastest</div>
-    <div class="numeral text-xl text-gold">{{ profile.fastest_str }}</div>
+<section class="grid grid-4">
+  <div class="card">
+    <div class="smallcaps">Fastest</div>
+    <div class="num serif fs-28 accent" style="margin-top: 8px;">{{ profile.fastest_str }}</div>
+    <div class="smallcaps" style="margin-top: 4px; font-size: 9.5px;">personal best</div>
   </div>
-  <div class="scoreboard p-3">
-    <div class="text-[10px] uppercase tracking-widest text-slate-400">Median</div>
-    <div class="numeral text-xl text-white">{{ profile.median_str }}</div>
+  <div class="card">
+    <div class="smallcaps">Median</div>
+    <div class="num serif fs-28" style="margin-top: 8px;">{{ profile.median_str }}</div>
+    <div class="smallcaps" style="margin-top: 4px; font-size: 9.5px;">across completions</div>
   </div>
-  <div class="scoreboard p-3">
-    <div class="text-[10px] uppercase tracking-widest text-slate-400">Best Day</div>
-    <div class="numeral text-base text-white">{{ profile.best_dow[0] if profile.best_dow else '—' }}</div>
-    <div class="text-[10px] text-slate-500">{{ profile.best_dow[1]|round(1) if profile.best_dow else '' }}{% if profile.best_dow %}s avg{% endif %}</div>
-  </div>
-  <div class="scoreboard p-3">
-    <div class="text-[10px] uppercase tracking-widest text-slate-400">Worst Day</div>
-    <div class="numeral text-base text-white">{{ profile.worst_dow[0] if profile.worst_dow else '—' }}</div>
-    <div class="text-[10px] text-slate-500">{{ profile.worst_dow[1]|round(1) if profile.worst_dow else '' }}{% if profile.worst_dow %}s avg{% endif %}</div>
-  </div>
-</section>
-
-{# ───── Trophy case ───── #}
-{% if profile.trophy_case %}
-<section class="mb-5">
-  <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-2">Trophy Case</h2>
-  <div class="scoreboard p-3 space-y-1">
-    {% for t in profile.trophy_case %}
-    <div class="flex justify-between items-center text-sm py-1.5 border-b border-white/5 last:border-0">
-      <span>
-        {% if t.award == 'champion' %}🏆 Champion
-        {% elif t.award == 'iron_man' %}🔥 Iron Man
-        {% elif t.award == 'lightning' %}⚡ Lightning
-        {% elif t.award == 'steady' %}🎯 Steady
-        {% elif t.award == 'giant_slayer' %}🗡️ Giant Slayer
-        {% endif %}
-      </span>
-      <span class="text-slate-400 text-xs">Week of {{ t.week_start }}</span>
+  <div class="card">
+    <div class="smallcaps">Best on</div>
+    <div class="serif fs-28" style="margin-top: 8px;">{{ profile.best_dow[0] if profile.best_dow else '—' }}</div>
+    <div class="smallcaps" style="margin-top: 4px; font-size: 9.5px;">
+      {% if profile.best_dow %}{{ profile.best_dow[1]|round(1) }}s avg{% endif %}
     </div>
-    {% endfor %}
+  </div>
+  <div class="card">
+    <div class="smallcaps">Slowest on</div>
+    <div class="serif fs-28" style="margin-top: 8px;">{{ profile.worst_dow[0] if profile.worst_dow else '—' }}</div>
+    <div class="smallcaps" style="margin-top: 4px; font-size: 9.5px;">
+      {% if profile.worst_dow %}{{ profile.worst_dow[1]|round(1) }}s avg{% endif %}
+    </div>
   </div>
 </section>
-{% endif %}
 
-{# ───── Recent activity (completed / DNF / absent) ───── #}
-<section class="mb-5">
-  <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-2">Recent Activity</h2>
-  <div class="scoreboard overflow-hidden">
-    <table class="w-full text-sm">
-      <thead class="text-xs font-display tracking-widest uppercase text-slate-400">
-        <tr class="border-b border-white/10">
-          <th class="text-left px-3 py-2">Date</th>
-          <th class="text-left px-3 py-2">Status</th>
-          <th class="text-right px-3 py-2">Time</th>
-          <th class="text-right px-3 py-2 hidden sm:table-cell">Rank</th>
-          <th class="text-right px-3 py-2 hidden sm:table-cell">z</th>
-          <th class="text-right px-3 py-2">Δ</th>
+{# ───── Recent activity + trophy case + rivals ───── #}
+<section class="grid two-col-stack" style="gap: 16px; grid-template-columns: 1.4fr 1fr;">
+  <div class="card flush">
+    <div style="padding: var(--pad-card); border-bottom: 1px solid var(--rule);">
+      <div class="sec-h" style="margin: 0;"><h2>Recent Activity</h2></div>
+    </div>
+    <table class="std">
+      <thead>
+        <tr>
+          <th>Date</th><th>Status</th>
+          <th class="ralign">Time</th>
+          <th class="ralign hidden-sm">Rank</th>
+          <th class="ralign hidden-sm">z</th>
+          <th class="ralign">Δ</th>
         </tr>
       </thead>
       <tbody>
         {% for s in profile.recent_activity %}
-        <tr class="border-b border-white/5">
-          <td class="px-3 py-2 text-slate-300">
-            {{ s.date }}
-            {% if s.is_late %}
-              <span class="ml-1 text-[10px] uppercase font-display tracking-widest px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300 border border-blue-500/30" title="Submitted after the puzzle day">🕒</span>
-            {% endif %}
-          </td>
-          <td class="px-3 py-2">
-            {% if s.kind == 'completed' %}<span class="text-emerald-400 text-xs uppercase font-display tracking-widest">done</span>
-            {% elif s.kind == 'dnf' %}<span class="text-yellow-300 text-xs uppercase font-display tracking-widest">DNF</span>
-            {% elif s.kind == 'absent' %}<span class="text-rose-300 text-xs uppercase font-display tracking-widest">absent</span>
-            {% endif %}
-          </td>
-          <td class="px-3 py-2 text-right numeral">
-            {% if s.kind == 'completed' %}{{ s.time_str }}{% else %}—{% endif %}
-          </td>
-          <td class="px-3 py-2 text-right hidden sm:table-cell numeral">{{ s.rank or '—' }}</td>
-          <td class="px-3 py-2 text-right hidden sm:table-cell numeral text-xs text-slate-400">{{ s.z|zscore }}</td>
-          <td class="px-3 py-2 text-right numeral text-xs {% if s.delta and s.delta > 0 %}text-emerald-400{% elif s.delta and s.delta < 0 %}text-rose-400{% else %}text-slate-500{% endif %}">
-            {{ s.delta|delta }}
-          </td>
-        </tr>
+          <tr>
+            <td class="num muted fs-13">
+              {{ s.date }}
+              {% if s.is_late %}<span class="smallcaps" style="margin-left: 6px; color: var(--accent-3)">late</span>{% endif %}
+            </td>
+            <td>
+              <span class="smallcaps" style="color: {% if s.kind == 'completed' %}var(--ink){% elif s.kind == 'dnf' %}var(--accent){% else %}var(--accent-2){% endif %}">
+                {{ 'done' if s.kind == 'completed' else s.kind }}
+              </span>
+            </td>
+            <td class="ralign num">{{ s.time_str if s.kind == 'completed' else '—' }}</td>
+            <td class="ralign num muted hidden-sm">{{ s.rank or '—' }}</td>
+            <td class="ralign num muted hidden-sm">{{ s.z|zscore }}</td>
+            <td class="ralign">{{ delta(s.delta) }}</td>
+          </tr>
         {% else %}
-        <tr><td colspan="6" class="px-3 py-4 text-center text-slate-500">No activity yet.</td></tr>
+          <tr><td colspan="6" class="center muted serif-it" style="padding: 32px;">No activity yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-</section>
 
-{# ───── H2H top 5 ───── #}
-{% if profile.h2h_top5 %}
-<section>
-  <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-2">Top Rivals</h2>
-  <div class="scoreboard p-3 space-y-1">
-    {% for h in profile.h2h_top5 %}
-    <div class="flex justify-between items-center text-sm py-1.5 border-b border-white/5 last:border-0">
-      <a href="{{ url_for('public.player_view', player_id=h.opponent_id) }}" class="hover:underline">{{ h.opponent_name }}</a>
-      <div class="text-xs">
-        <span class="text-emerald-400 numeral">{{ h.wins }}W</span>
-        <span class="text-slate-500 mx-1">·</span>
-        <span class="text-rose-400 numeral">{{ h.losses }}L</span>
-      </div>
+  <div class="stack stack-16">
+    <div class="card">
+      <div class="sec-h"><h2>Trophy Case</h2></div>
+      {% if profile.trophy_case %}
+        <div class="stack stack-8">
+          {% for t in profile.trophy_case %}
+            <div class="row between" style="padding-bottom: 10px; border-bottom: 1px solid var(--rule-soft);">
+              <span class="row" style="gap: 10px; color: var(--ink-3);">{{ trophy(t.award, 14) }}<span style="color: var(--ink)">{{ TROPHY_LABELS[t.award] }}</span></span>
+              <span class="num muted fs-13">{{ t.week_start }}</span>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="muted serif-it">No trophies yet.</p>
+      {% endif %}
     </div>
-    {% endfor %}
+    <div class="card">
+      <div class="sec-h"><h2>Top Rivals</h2></div>
+      {% if profile.h2h_top5 %}
+        <div class="stack stack-8">
+          {% for h in profile.h2h_top5 %}
+            <a href="{{ url_for('public.player_view', player_id=h.opponent_id) }}"
+               class="row between" style="padding-bottom: 8px; border-bottom: 1px solid var(--rule-soft);">
+              <span>{{ h.opponent_name }}</span>
+              <span class="num fs-13">
+                <span style="color: var(--good)">{{ h.wins }}W</span>
+                <span class="muted-2" style="margin: 0 6px;">·</span>
+                <span style="color: var(--bad)">{{ h.losses }}L</span>
+              </span>
+            </a>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="muted serif-it">No shared days yet.</p>
+      {% endif %}
+    </div>
   </div>
 </section>
-{% endif %}
+
+</div>
+
+<style>
+@media (max-width: 800px) {
+  .profile-hero { grid-template-columns: 1fr !important; }
+  .profile-aside { border-left: none !important; border-top: 1px solid var(--rule); }
+  .two-col-stack { grid-template-columns: 1fr !important; }
+  .trophy-row-grid > div { padding: 14px 6px !important; }
+  .trophy-row-grid .smallcaps { font-size: 9px !important; letter-spacing: 0.08em !important; }
+  .grid-4 { grid-template-columns: 1fr 1fr !important; }
+}
+</style>
 
 {% endblock %}

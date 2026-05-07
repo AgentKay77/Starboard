@@ -1,0 +1,101 @@
+{# Custom monoline glyphs — drawn as inline SVG so they inherit currentColor.
+   Mirrors the design's glyphs.jsx; size in pixels, fill is mostly stroke. #}
+
+{% macro star_mark(size=18, fill=False) -%}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24"
+     fill="{{ 'currentColor' if fill else 'none' }}" stroke="currentColor"
+     stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+  <path d="M12 2.5 L14.6 9.2 L21.7 9.7 L16.2 14.3 L18 21.2 L12 17.4 L6 21.2 L7.8 14.3 L2.3 9.7 L9.4 9.2 Z"/>
+</svg>
+{%- endmacro %}
+
+{% macro trophy(kind, size=18) -%}
+{% if kind == 'champion' -%}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none"
+     stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+  <path fill="currentColor" stroke="none" d="M12 7.2 L13.2 10.3 L16.5 10.5 L14 12.6 L14.8 15.8 L12 14 L9.2 15.8 L10 12.6 L7.5 10.5 L10.8 10.3 Z"/>
+  <path d="M5 11 C 4 14, 5 17, 8 18.5"/>
+  <path d="M19 11 C 20 14, 19 17, 16 18.5"/>
+  <path d="M9 19.5 L15 19.5"/>
+</svg>
+{%- elif kind == 'iron_man' -%}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none"
+     stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+  <path d="M5 6 L5 18"/><path d="M9 6 L9 18"/>
+  <path d="M13 6 L13 18"/><path d="M17 6 L17 18"/>
+  <path d="M3.5 12 L18.5 12"/>
+</svg>
+{%- elif kind == 'lightning' -%}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none"
+     stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+  <path fill="currentColor" stroke="none" d="M13.5 3 L6 13 L11 13 L10 21 L17.5 11 L12.5 11 Z"/>
+</svg>
+{%- elif kind == 'steady' -%}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none"
+     stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+  <circle cx="12" cy="12" r="9"/>
+  <circle cx="12" cy="12" r="5.5"/>
+  <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/>
+</svg>
+{%- elif kind == 'giant_slayer' -%}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none"
+     stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+  <path d="M4 4 L20 20"/><path d="M20 4 L4 20"/>
+  <path d="M4 4 L7 4 L7 7"/><path d="M20 4 L17 4 L17 7"/>
+  <path d="M4 20 L7 20 L7 17"/><path d="M20 20 L17 20 L17 17"/>
+</svg>
+{%- endif %}
+{%- endmacro %}
+
+{% macro trophy_chip(kind, count=None) -%}
+<span class="trophy-chip" title="{{ {
+  'champion': 'Champion', 'iron_man': 'Iron Man', 'lightning': 'Lightning',
+  'steady': 'Steady', 'giant_slayer': 'Giant Slayer'
+}[kind] }}">
+  {{ trophy(kind, 14) }}{% if count is not none %}<span class="ct">{{ count }}</span>{% endif %}
+</span>
+{%- endmacro %}
+
+{% macro chevron_right(size=12) -%}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+     stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+  <path d="M9 5 L16 12 L9 19"/>
+</svg>
+{%- endmacro %}
+
+{# Star whose visual size encodes APR (magnitude metaphor). #}
+{% macro mag_star(rating, base=18, min_r=1400, max_r=1900) -%}
+{%- set t = ((rating - min_r) / (max_r - min_r)) -%}
+{%- if t < 0 %}{% set t = 0 %}{% elif t > 1 %}{% set t = 1 %}{% endif -%}
+{%- set size = base + t * base * 1.4 -%}
+{%- set opacity = 0.55 + t * 0.45 -%}
+<span style="display:inline-flex; color: var(--accent); opacity: {{ '%.2f'|format(opacity) }}">
+  {{ star_mark(size|round|int, fill=True) }}
+</span>
+{%- endmacro %}
+
+{# Sparkline. `values` is a list of numbers. #}
+{% macro sparkline(values, color='var(--ink)', width=120, height=32) -%}
+{%- if values and values|length >= 2 -%}
+{%- set vmin = values|min -%}
+{%- set vmax = values|max -%}
+{%- set vrange = (vmax - vmin) if vmax != vmin else 1 -%}
+<svg class="spark" viewBox="0 0 {{ width }} {{ height }}" preserveAspectRatio="none">
+  <polyline points="
+    {%- for v in values -%}
+      {{ '%.1f'|format(loop.index0 / (values|length - 1) * width) }},{{ '%.1f'|format(height - (v - vmin) / vrange * height) }}
+      {%- if not loop.last %} {% endif -%}
+    {%- endfor -%}"
+    fill="none" stroke="{{ color }}" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>
+{%- endif -%}
+{%- endmacro %}
+
+{# Delta — colored signed integer. #}
+{% macro delta(value) -%}
+{%- if value is none -%}<span class="delta-zero">—</span>
+{%- elif value > 0 -%}<span class="delta-up num">+{{ value|round|int if (value|round) == (value|round|int) else '%.1f'|format(value) }}</span>
+{%- elif value < 0 -%}<span class="delta-down num">{{ value|round|int if (value|round) == (value|round|int) else '%.1f'|format(value) }}</span>
+{%- else -%}<span class="delta-zero num">0</span>
+{%- endif -%}
+{%- endmacro %}

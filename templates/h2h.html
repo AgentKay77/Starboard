@@ -1,47 +1,155 @@
 {% extends "base.html" %}
+{% set active_nav = 'h2h' %}
 {% block title %}Head-to-Head{% endblock %}
 {% block content %}
 
-<header class="mb-5">
-  <h1 class="font-display text-3xl tracking-wider uppercase">Head-to-Head</h1>
-  <p class="text-slate-400 text-sm">Cell value = times the row player finished ahead of the column player on shared days.</p>
+<header class="page-h">
+  <div>
+    <span class="smallcaps">Pairwise wins on shared days</span>
+    <h1 class="serif">Head-to-Head</h1>
+    <p>Each cell counts how often the row player finished ahead of the column player on days they both played.</p>
+  </div>
+  <div class="toggle-group" data-h2h-tabs>
+    <button type="button" class="active" data-view="grid">Grid</button>
+    <button type="button"                 data-view="constellation">Constellation</button>
+  </div>
 </header>
 
-<div class="scoreboard overflow-x-auto p-3">
-  <table class="border-collapse text-slate-200 mx-auto">
-    <thead>
-      <tr>
-        <th class="h2h-cell"></th>
-        {% for col in matrix.players %}
-          <th class="h2h-cell text-slate-400 font-display tracking-widest uppercase text-[10px]" title="{{ col.display_name }}">
-            {{ col.display_name[:3]|upper }}
-          </th>
-        {% endfor %}
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in matrix.players %}
-      <tr>
-        <td class="h2h-cell text-slate-400 font-display tracking-widest uppercase text-[10px]" title="{{ row.display_name }}">{{ row.display_name[:3]|upper }}</td>
-        {% for col in matrix.players %}
-          {% set wins = matrix.wins.get((row.id, col.id), 0) %}
-          {% set losses = matrix.wins.get((col.id, row.id), 0) %}
-          {% set total = wins + losses %}
-          {% if row.id == col.id %}
-            <td class="h2h-cell h2h-self">—</td>
-          {% else %}
-            {% set ratio = (wins / total) if total else 0.5 %}
-            <td class="h2h-cell"
-                style="background: rgba({{ (255*(1-ratio))|int }}, {{ (200*ratio)|int }}, {{ (80 + 100*ratio)|int }}, 0.20);"
-                title="{{ row.display_name }} {{ wins }}–{{ losses }} {{ col.display_name }}">
-              <span>{{ wins }}</span>
-            </td>
+{% set players = matrix.players %}
+
+<div data-view-pane="grid" class="card flush">
+  {% if players|length < 2 %}
+    <div class="center muted serif-it" style="padding: 40px;">Not enough players to compare yet.</div>
+  {% else %}
+    <div class="h2h-wrap">
+      <table class="h2h-table">
+        <thead>
+          <tr>
+            <th></th>
+            {% for c in players %}
+              <th title="{{ c.display_name }}">{{ (c.display_name or '')[:3]|upper }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in players %}
+            <tr>
+              <th title="{{ row.display_name }}">{{ (row.display_name or '')[:3]|upper }}</th>
+              {% for col in players %}
+                {% if row.id == col.id %}
+                  <td class="self">·</td>
+                {% else %}
+                  {% set wins   = matrix.wins.get((row.id, col.id), 0) %}
+                  {% set losses = matrix.wins.get((col.id, row.id), 0) %}
+                  {% set total  = wins + losses %}
+                  {% set ratio  = (wins / total) if total > 0 else 0.5 %}
+                  {% set intensity = (((ratio - 0.5)|abs) * 2) if total > 0 else 0 %}
+                  {% if ratio >= 0.5 %}
+                    {% set bg = 'color-mix(in oklab, var(--accent) ' ~ (intensity * 50)|round|int ~ '%, transparent)' %}
+                  {% else %}
+                    {% set bg = 'color-mix(in oklab, var(--accent-2) ' ~ (intensity * 35)|round|int ~ '%, transparent)' %}
+                  {% endif %}
+                  <td style="background: {{ bg }};"
+                      title="{{ row.display_name }} {{ wins }}–{{ losses }} {{ col.display_name }}">
+                    {{ wins if total > 0 else '·' }}
+                  </td>
+                {% endif %}
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="h2h-legend">
+      <span><span class="swatch" style="background: color-mix(in oklab, var(--accent) 50%, transparent);"></span>row dominant</span>
+      <span><span class="swatch" style="background: color-mix(in oklab, var(--accent-2) 35%, transparent);"></span>column dominant</span>
+      <span class="serif-it">Read row → column.</span>
+    </div>
+  {% endif %}
+</div>
+
+{# ───── Constellation graph ───── #}
+{% if players|length >= 2 %}
+  {% set n = players|length %}
+  {% set W = 720 %}
+  {% set H = 560 %}
+  {% set cx = W // 2 %}
+  {% set cy = H // 2 %}
+  {% set radius = 220 %}
+  {% set tau = 6.2831853 %}
+  {% set ratings = [] %}
+  {% for p in players %}{% set _ = ratings.append(p.rating|default(1500)) %}{% endfor %}
+
+  <div data-view-pane="constellation" class="card" style="display: none; padding: 12px;">
+    <svg viewBox="0 0 {{ W }} {{ H }}" style="width: 100%; height: auto; display: block;">
+      {# edges #}
+      {% for i in range(n) %}
+        {% for j in range(i + 1, n) %}
+          {% set a = players[i] %}
+          {% set b = players[j] %}
+          {% set wA = matrix.wins.get((a.id, b.id), 0) %}
+          {% set wB = matrix.wins.get((b.id, a.id), 0) %}
+          {% set total = wA + wB %}
+          {% if total > 0 %}
+            {% set ang_a = (i / n) * tau - 1.5707963 %}
+            {% set ang_b = (j / n) * tau - 1.5707963 %}
+            {% set ax = cx + (radius * (ang_a|cosf)) %}
+            {% set ay = cy + (radius * (ang_a|sinf)) %}
+            {% set bx = cx + (radius * (ang_b|cosf)) %}
+            {% set by = cy + (radius * (ang_b|sinf)) %}
+            {% if wA > wB * 1.3 %}{% set stroke = 'var(--accent)' %}
+            {% elif wB > wA * 1.3 %}{% set stroke = 'var(--accent-2)' %}
+            {% else %}{% set stroke = 'var(--ink-3)' %}{% endif %}
+            <line x1="{{ '%.1f'|format(ax) }}" y1="{{ '%.1f'|format(ay) }}"
+                  x2="{{ '%.1f'|format(bx) }}" y2="{{ '%.1f'|format(by) }}"
+                  stroke="{{ stroke }}" stroke-width="{{ '%.2f'|format(0.5 + total / 30) }}"
+                  opacity="0.35"/>
           {% endif %}
         {% endfor %}
-      </tr>
       {% endfor %}
-    </tbody>
-  </table>
-</div>
+      {# nodes #}
+      {% for p in players %}
+        {% set ang = (loop.index0 / n) * tau - 1.5707963 %}
+        {% set x = cx + (radius * (ang|cosf)) %}
+        {% set y = cy + (radius * (ang|sinf)) %}
+        {% set t = ((p.rating|default(1500)) - 1400) / 500 %}
+        {% if t < 0 %}{% set t = 0 %}{% elif t > 1 %}{% set t = 1 %}{% endif %}
+        {% set sz = 4 + t * 10 %}
+        <g>
+          <a href="{{ url_for('public.player_view', player_id=p.id) }}">
+            <circle cx="{{ '%.1f'|format(x) }}" cy="{{ '%.1f'|format(y) }}" r="{{ '%.1f'|format(sz + 4) }}"
+                    fill="var(--accent)" opacity="0.18"/>
+            <circle cx="{{ '%.1f'|format(x) }}" cy="{{ '%.1f'|format(y) }}" r="{{ '%.1f'|format(sz) }}"
+                    fill="var(--accent)"/>
+            <text x="{{ '%.1f'|format(x) }}" y="{{ '%.1f'|format(y - sz - 8) }}" text-anchor="middle"
+                  font-size="13" font-family="Instrument Serif, Georgia, serif" fill="var(--ink)">{{ p.display_name }}</text>
+            {% if p.rating %}
+              <text x="{{ '%.1f'|format(x) }}" y="{{ '%.1f'|format(y + sz + 14) }}" text-anchor="middle"
+                    font-size="10" font-family="JetBrains Mono, monospace" fill="var(--ink-3)">{{ p.rating|round|int }}</text>
+            {% endif %}
+          </a>
+        </g>
+      {% endfor %}
+    </svg>
+    <div class="h2h-legend">
+      <span class="serif-it">Star size = APR · line weight = games played · color = dominant side.</span>
+    </div>
+  </div>
+{% endif %}
+
+<script>
+(function () {
+  const tabs = document.querySelector('[data-h2h-tabs]');
+  if (!tabs) return;
+  const panes = document.querySelectorAll('[data-view-pane]');
+  tabs.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-view]');
+    if (!btn) return;
+    const view = btn.dataset.view;
+    tabs.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === btn));
+    panes.forEach((p) => p.style.display = (p.dataset.viewPane === view) ? '' : 'none');
+  });
+})();
+</script>
 
 {% endblock %}

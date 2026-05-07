@@ -1,49 +1,20 @@
-// Chart.js initializers. Each chart-bearing template stamps a <canvas> with
-// data-chart="rating-history" plus data-* JSON for the points; this script
-// wires Chart.js against those.
-
+// SVG sparklines + heatmap helpers. The design renders the APR chart and
+// sparklines directly as inline SVG in templates, so this file is a thin
+// progressive-enhancement layer for any client-only flourishes.
 (function () {
-  if (typeof Chart === "undefined") return;
-
-  Chart.defaults.color = "#cbd5e1";
-  Chart.defaults.borderColor = "rgba(148, 163, 184, 0.15)";
-  Chart.defaults.font.family = "'JetBrains Mono', ui-monospace, monospace";
-
-  function ratingHistoryChart(canvas) {
-    const labels = JSON.parse(canvas.dataset.labels || "[]");
-    const data = JSON.parse(canvas.dataset.values || "[]");
-    new Chart(canvas, {
-      type: "line",
-      data: {
-        labels,
-        datasets: [
-          {
-            label: "APR",
-            data,
-            borderColor: "#fbbf24",
-            backgroundColor: "rgba(251, 191, 36, 0.1)",
-            fill: true,
-            tension: 0.3,
-            pointRadius: 3,
-            pointHoverRadius: 6,
-            borderWidth: 2,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { grid: { display: false } },
-          y: {
-            ticks: { precision: 0 },
-            grid: { color: "rgba(148, 163, 184, 0.08)" },
-          },
-        },
-      },
+  // Prevent flash-of-unstyled segmented-control click when JS is unavailable.
+  document.querySelectorAll(".toggle-group[data-storage-key]").forEach((group) => {
+    const key = group.dataset.storageKey;
+    const stored = key && localStorage.getItem(key);
+    if (stored) {
+      group.querySelectorAll("a, button").forEach((el) => {
+        el.classList.toggle("active", el.dataset.value === stored);
+      });
+    }
+    group.addEventListener("click", (e) => {
+      const el = e.target.closest("[data-value]");
+      if (!el || !key) return;
+      localStorage.setItem(key, el.dataset.value);
     });
-  }
-
-  document.querySelectorAll('canvas[data-chart="rating-history"]').forEach(ratingHistoryChart);
+  });
 })();
