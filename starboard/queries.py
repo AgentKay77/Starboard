@@ -563,12 +563,18 @@ def latest_day(conn: sqlite3.Connection) -> dict | None:
 
 def records(conn: sqlite3.Connection) -> dict:
     fastest = conn.execute(
-        """SELECT s.time_seconds, p.name, p.display_name, p.id AS pid, pd.date
-           FROM submissions s
-           JOIN players p ON p.id = s.player_id
-           JOIN puzzle_days pd ON pd.id = s.day_id
-           WHERE s.status = 'completed'
-           ORDER BY s.time_seconds ASC LIMIT 10"""
+        """SELECT * FROM (
+             SELECT s.time_seconds, p.name, p.display_name, p.id AS pid, pd.date,
+                    ROW_NUMBER() OVER (
+                      PARTITION BY p.id ORDER BY s.time_seconds ASC
+                    ) AS rn
+             FROM submissions s
+             JOIN players p ON p.id = s.player_id
+             JOIN puzzle_days pd ON pd.id = s.day_id
+             WHERE s.status = 'completed'
+           )
+           WHERE rn = 1
+           ORDER BY time_seconds ASC LIMIT 10"""
     ).fetchall()
     most_trophies = conn.execute(
         """SELECT p.id, p.name, p.display_name, COUNT(*) AS ct
@@ -585,11 +591,17 @@ def records(conn: sqlite3.Connection) -> dict:
            GROUP BY wa.player_id ORDER BY ct DESC, p.id ASC LIMIT 10"""
     ).fetchall()
     peak_apr = conn.execute(
-        """SELECT rh.rating_after, p.id, p.name, p.display_name, pd.date
-           FROM rating_history rh
-           JOIN players p ON p.id = rh.player_id
-           JOIN puzzle_days pd ON pd.id = rh.day_id
-           ORDER BY rh.rating_after DESC LIMIT 10"""
+        """SELECT * FROM (
+             SELECT rh.rating_after, p.id, p.name, p.display_name, pd.date,
+                    ROW_NUMBER() OVER (
+                      PARTITION BY rh.player_id ORDER BY rh.rating_after DESC
+                    ) AS rn
+             FROM rating_history rh
+             JOIN players p ON p.id = rh.player_id
+             JOIN puzzle_days pd ON pd.id = rh.day_id
+           )
+           WHERE rn = 1
+           ORDER BY rating_after DESC LIMIT 10"""
     ).fetchall()
     biggest_gs = conn.execute(
         """SELECT wa.metric_value, wa.metric_detail, wa.week_start,
