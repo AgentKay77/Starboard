@@ -189,6 +189,21 @@ def records_view():
     return render_template("records.html", records=queries.records(get_db()))
 
 
+@public_bp.route("/about")
+def about():
+    """Public-facing rules + APR explainer."""
+    from starboard import apr as apr_mod
+
+    return render_template(
+        "about.html",
+        K=apr_mod.K,
+        initial_rating=int(apr_mod.INITIAL_RATING),
+        rating_per_sigma=int(apr_mod.RATING_PER_SIGMA),
+        dnf_floor=apr_mod.DNF_FLOOR,
+        absent_floor=apr_mod.ABSENT_FLOOR,
+    )
+
+
 @public_bp.route("/days/<day_date>/theories")
 def day_theories(day_date: str):
     from datetime import date as _date
