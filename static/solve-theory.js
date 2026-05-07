@@ -3,6 +3,8 @@
 //                      day's canonical board. Pick order falls back to the
 //                      order stars were placed in.
 //   Mode B ("pick"):   board already exists; user taps stars in pick order.
+// Painting supports drag (mouse + touch via pointer events) so a single
+// swipe can fill an entire region without retapping every cell.
 // The widget serializes to three hidden inputs on form submit.
 
 (function () {
@@ -16,7 +18,6 @@
   const existing = root.dataset.boardPayload && root.dataset.boardPayload !== 'null'
     ? JSON.parse(root.dataset.boardPayload) : null;
   const canEditBoard = root.dataset.canEditBoard === '1';
-  const editingExisting = existing !== null && !canEditBoard;
 
   // State.  Unpainted cells use -1 as a sentinel so a tap with any region
   // tool produces an obvious visible change. validate_board() on the server
@@ -67,6 +68,53 @@
     });
   }
 
+  // ---- Rendering ---------------------------------------------------------
+  // We update a single cell in place rather than rebuilding the grid on
+  // every tap. That's necessary for drag-paint to work — full re-renders
+  // would orphan the captured pointer mid-drag.
+
+  function applyCellClasses(div, r, c) {
+    if (!div) return;
+    const rid = regions[r][c];
+    const regionClass = rid === UNPAINTED
+      ? 'theory-region-unpainted'
+      : `theory-region-${rid}`;
+    const rightDiffers = c < size - 1 && regions[r][c + 1] !== rid;
+    const belowDiffers = r < size - 1 && regions[r + 1][c] !== rid;
+    const hasStar = stars.some((s) => s[0] === r && s[1] === c);
+    const pickIdx = pickOrder.indexOf(`${r},${c}`);
+
+    const classes = ['theory-cell', regionClass];
+    if (rightDiffers) classes.push('boundary-right');
+    if (belowDiffers) classes.push('boundary-bottom');
+    if (c === size - 1) classes.push('frame-right');
+    if (r === size - 1) classes.push('frame-bottom');
+    if (hasStar) classes.push('has-star');
+    if (pickIdx >= 0) classes.push('pick-marked');
+    div.className = classes.join(' ');
+
+    const oldNum = div.querySelector('.pick-num');
+    if (oldNum) oldNum.remove();
+    if (pickIdx >= 0) {
+      const num = document.createElement('span');
+      num.className = 'pick-num';
+      num.textContent = pickIdx + 1;
+      div.appendChild(num);
+    }
+  }
+
+  function getCellEl(r, c) {
+    return grid.querySelector(`[data-r="${r}"][data-c="${c}"]`);
+  }
+
+  // Refresh the painted cell plus its top/left neighbours, since their
+  // right/bottom boundary classes flip when *this* cell's region changes.
+  function refreshCellAndNeighbors(r, c) {
+    applyCellClasses(getCellEl(r, c), r, c);
+    if (r > 0) applyCellClasses(getCellEl(r - 1, c), r - 1, c);
+    if (c > 0) applyCellClasses(getCellEl(r, c - 1), r, c - 1);
+  }
+
   function render() {
     renderTools();
     renderGrid();
@@ -77,7 +125,6 @@
     tools.innerHTML = '';
     const isPickMode = existing && !canEditBoard;
     if (!isPickMode) {
-      // N region paints.
       for (let i = 0; i < size; i++) {
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -98,7 +145,6 @@
       tools.appendChild(star);
     }
 
-    // Pick-order tool always available once stars exist.
     if (stars.length > 0) {
       const pick = document.createElement('button');
       pick.type = 'button';
@@ -115,69 +161,106 @@
     grid.innerHTML = '';
     grid.style.gridTemplateColumns = `repeat(${size}, var(--cell))`;
     grid.dataset.mode = (existing && !canEditBoard) ? 'pick' : 'edit';
-    const starSet = new Set(stars.map((s) => s.join(',')));
     for (let r = 0; r < size; r++) {
       for (let c = 0; c < size; c++) {
         const cell = document.createElement('div');
-        const rid = regions[r][c];
-        const regionClass = rid === UNPAINTED
-          ? 'theory-region-unpainted'
-          : `theory-region-${rid}`;
-        const classes = ['theory-cell', regionClass];
-        // Heavy ink boundary between cells that belong to different regions
-        // — that's the puzzle's region outline.
-        const rightDiffers = c < size - 1 && regions[r][c + 1] !== rid;
-        const belowDiffers = r < size - 1 && regions[r + 1][c] !== rid;
-        if (rightDiffers) classes.push('boundary-right');
-        if (belowDiffers) classes.push('boundary-bottom');
-        // Outer frame on the rightmost column / bottom row.
-        if (c === size - 1) classes.push('frame-right');
-        if (r === size - 1) classes.push('frame-bottom');
-        cell.className = classes.join(' ');
         cell.dataset.r = r;
         cell.dataset.c = c;
-        const key = `${r},${c}`;
-        if (starSet.has(key)) cell.classList.add('has-star');
-        const pickIdx = pickOrder.indexOf(key);
-        if (pickIdx >= 0) {
-          cell.classList.add('pick-marked');
-          const num = document.createElement('span');
-          num.className = 'pick-num';
-          num.textContent = pickIdx + 1;
-          cell.appendChild(num);
-        }
-        cell.addEventListener('click', onCell);
+        applyCellClasses(cell, r, c);
         grid.appendChild(cell);
       }
     }
   }
 
-  function onCell(e) {
-    const r = parseInt(e.currentTarget.dataset.r, 10);
-    const c = parseInt(e.currentTarget.dataset.c, 10);
-    const key = `${r},${c}`;
-    const starSet = new Set(stars.map((s) => s.join(',')));
+  // ---- Interaction -------------------------------------------------------
+  // Painting is drag-friendly via pointer events: pointerdown on a cell
+  // starts the gesture, pointermove walks across additional cells, and we
+  // lift on pointerup/cancel/leave. Star/pick tools remain click-only —
+  // dragging through stars to toggle them is more confusing than helpful.
+
+  let drag = null;  // { paintId: number, lastKey: string } | null
+
+  function paintAt(r, c) {
+    if (!drag) return;
+    if (regions[r][c] === drag.paintId) return;
+    regions[r][c] = drag.paintId;
+    refreshCellAndNeighbors(r, c);
+  }
+
+  function cellFromPoint(x, y) {
+    const el = document.elementFromPoint(x, y);
+    if (!el) return null;
+    const cell = el.closest('.theory-cell');
+    if (!cell || !grid.contains(cell)) return null;
+    return cell;
+  }
+
+  grid.addEventListener('pointerdown', (e) => {
+    const cell = e.target.closest('.theory-cell');
+    if (!cell) return;
+    const r = parseInt(cell.dataset.r, 10);
+    const c = parseInt(cell.dataset.c, 10);
 
     if (tool.startsWith('paint:')) {
       const id = parseInt(tool.split(':')[1], 10);
-      regions[r][c] = id;
-    } else if (tool === 'star') {
+      drag = { paintId: id, lastKey: '' };
+      // Capture so subsequent move events keep firing even if the finger
+      // briefly leaves the cell during the gesture.
+      try { grid.setPointerCapture(e.pointerId); } catch (_) { /* mouse-only on some browsers */ }
+      paintAt(r, c);
+      drag.lastKey = `${r},${c}`;
+      e.preventDefault();
+      return;
+    }
+
+    // Star + pick tools: per-tap toggles, no drag.
+    handleTap(r, c);
+  });
+
+  grid.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const cell = cellFromPoint(e.clientX, e.clientY);
+    if (!cell) return;
+    const r = parseInt(cell.dataset.r, 10);
+    const c = parseInt(cell.dataset.c, 10);
+    const key = `${r},${c}`;
+    if (key === drag.lastKey) return;
+    paintAt(r, c);
+    drag.lastKey = key;
+  });
+
+  function endDrag(e) {
+    if (!drag) return;
+    drag = null;
+    try { if (e && e.pointerId != null) grid.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+    updateHint();
+  }
+  grid.addEventListener('pointerup', endDrag);
+  grid.addEventListener('pointercancel', endDrag);
+  grid.addEventListener('pointerleave', endDrag);
+
+  function handleTap(r, c) {
+    const key = `${r},${c}`;
+    const starSet = new Set(stars.map((s) => s.join(',')));
+    if (tool === 'star') {
       if (starSet.has(key)) {
         stars = stars.filter((s) => s[0] !== r || s[1] !== c);
         pickOrder = pickOrder.filter((k) => k !== key);
       } else {
         stars.push([r, c]);
       }
+      // Star toggle reshapes which tools are available (pick-order tool
+      // appears once any star is placed) so do a full re-render here.
+      render();
     } else if (tool === 'pick') {
       if (!starSet.has(key)) return;
       const idx = pickOrder.indexOf(key);
-      if (idx >= 0) {
-        pickOrder.splice(idx, 1);
-      } else {
-        pickOrder.push(key);
-      }
+      if (idx >= 0) pickOrder.splice(idx, 1);
+      else pickOrder.push(key);
+      // Pick numbering shifts on every other cell, refresh whole grid.
+      renderGrid();
+      updateHint();
     }
-    render();
   }
 
   function updateHint() {
@@ -191,10 +274,9 @@
     if (tool.startsWith('paint:')) {
       const regionIdx = parseInt(tool.split(':')[1], 10);
       const ownCount = countCellsInRegion(regionIdx);
-      const targetCount = size;  // each region must hold exactly `size` cells
       hint.textContent =
-        `Painting region ${regionIdx + 1} (${ownCount}/${targetCount} cells). ` +
-        `${unpaintedCount} cell(s) unpainted.`;
+        `Painting region ${regionIdx + 1} (${ownCount}/${size} cells). ` +
+        `${unpaintedCount} cell(s) unpainted. Drag to fill.`;
     } else if (tool === 'star') {
       hint.textContent = `Place ${2 * size} stars total. Tap to toggle. Currently placed: ${stars.length}.`;
     } else if (tool === 'pick') {
@@ -223,16 +305,13 @@
   if (form) {
     form.addEventListener('submit', (e) => {
       if (!toggle.checked) return;
-      // Author-side validation in Mode A: every cell must be painted before
-      // the server's stricter check kicks in. Avoids losing a long paint to
-      // a "regions[r][c] not in [0,size)" rejection from the server.
       if (!existing) {
         const unpainted = countUnpainted();
         if (unpainted > 0) {
           e.preventDefault();
           alert(
             `Solve theory: ${unpainted} cell(s) still unpainted. ` +
-            `Pick a region color and tap them, or untick "Solve Theory" to skip.`
+            `Pick a region color and drag/tap to fill them, or untick "Solve Theory" to skip.`
           );
           return;
         }
@@ -246,11 +325,8 @@
         }
       }
       regionsField.value = JSON.stringify(regions);
-      // Keep stars sorted so server's set-compare works on either side.
       const sortedStars = stars.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
       starsField.value = JSON.stringify(sortedStars);
-      // If the user didn't bother marking pick-order in Mode A, seed it with
-      // the placement order so the server has *something* to record.
       const fallback = !existing && pickOrder.length === 0
         ? stars.map((s) => `${s[0]},${s[1]}`)
         : pickOrder;
@@ -265,11 +341,7 @@
     return g.map((row) => row.slice());
   }
 
-  // First paint when the page loads in case the panel was already open.
   if (toggle.checked) panel.hidden = false;
   if (!panel.hidden) render();
-
-  // If editing an existing board, render eagerly so the user sees it as
-  // soon as they tick the checkbox.
   if (existing) render();
 })();

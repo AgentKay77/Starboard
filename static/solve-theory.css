@@ -40,6 +40,9 @@
      the cells themselves draw, so the border looks continuous. */
   border-top: 2px solid var(--ink);
   border-left: 2px solid var(--ink);
+  /* Drag-paint: keep the browser from interpreting touch swipes as scrolls
+     so finger drags reach our pointer handlers cleanly. */
+  touch-action: none;
 }
 .theory-cell {
   width: var(--cell); height: var(--cell);
@@ -54,6 +57,7 @@
   font-variant-numeric: tabular-nums;
   font-size: 14px; line-height: 1;
   user-select: none; -webkit-tap-highlight-color: transparent;
+  touch-action: none;
 }
 .theory-cell.boundary-right  { border-right:  2px solid var(--ink); }
 .theory-cell.boundary-bottom { border-bottom: 2px solid var(--ink); }
