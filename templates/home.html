@@ -22,17 +22,16 @@
         <div class="serif" style="margin-top: 18px; font-size: clamp(48px, 6.5vw, 88px); line-height: 0.94;">
           <a href="{{ url_for('public.player_view', player_id=leader.player_id) }}">{{ leader.display_name }}</a>
           <span class="serif-it muted" style="font-size: 0.42em; display: block; margin-top: 8px;">
-            holds the brightest star.
+            leads the season at <span class="num">{{ leader.rating|rating }}</span> APR.
           </span>
         </div>
         <p class="muted" style="max-width: 46ch; font-size: 14px; line-height: 1.55; margin-top: 18px;">
           {% if podium|length > 1 %}
-          {{ leader.display_name }} sits
           <span class="num">{{ (leader.rating - podium[1].rating)|round|int }}</span>
           APR clear of {{ podium[1].display_name }}.
           {% endif %}
           {% if latest_day and latest_day.winner_name %}
-          The most recent {{ latest_day.field_size }}-player skirmish was won in
+          Yesterday's puzzle: {{ latest_day.field_size }} players, fastest time
           <span class="num">{{ latest_day.winner_time_str }}</span>.
           {% endif %}
         </p>
@@ -84,7 +83,7 @@
 {% if podium|length > 0 %}
 <section>
   <div class="sec-h">
-    <h2>Top of the Constellation</h2>
+    <h2>Top of the standings</h2>
     <a href="{{ url_for('public.standings_view') }}" class="smallcaps" style="color: var(--accent-2)">All players →</a>
   </div>
   <div class="card flush">
@@ -176,7 +175,7 @@
 {# ───── Season ledger ───── #}
 <section>
   <div class="sec-h">
-    <h2>Season Ledger</h2>
+    <h2>Season totals</h2>
     <span class="smallcaps">Through Day {{ stats.total_days }}</span>
   </div>
   <div class="card flush">
