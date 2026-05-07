@@ -1,0 +1,141 @@
+{% extends "admin/_layout.html" %}
+{% block title %}Bulk · {{ day_date }}{% endblock %}
+{% block content %}
+
+<header class="mb-5 flex items-baseline justify-between flex-wrap gap-3">
+  <div>
+    <h1 class="font-display text-3xl tracking-wider">Day Bulletin · {{ day_date }}</h1>
+    <p class="text-slate-400 text-sm mt-1">
+      Enter every player's result for this day in one shot. Status defaults to
+      <em>Absent</em>; only completed rows need a time. Saving runs the same
+      recompute path as <code>/submit</code>.
+      Week of <span class="numeral">{{ week_start }}</span>.
+    </p>
+  </div>
+  <form method="get" class="flex gap-2">
+    <input id="day-picker" type="date" value="{{ day_date }}"
+           onchange="window.location.href='/admin/days/' + this.value + '/bulk'"
+           class="bg-navy-800 border border-white/10 rounded px-3 py-2 numeral" />
+  </form>
+</header>
+
+{% if not players %}
+  <div class="scoreboard p-6 text-center text-slate-400 italic">
+    No active players had joined by {{ day_date }}.
+  </div>
+{% else %}
+
+<form method="post" id="bulk-form" class="scoreboard p-4">
+  <div class="flex flex-wrap items-center gap-2 mb-4 pb-4 border-b border-white/10">
+    <span class="font-display tracking-widest uppercase text-slate-400 text-xs mr-2">Mass set</span>
+    <button type="button" data-mass="completed"
+            class="bg-white/10 hover:bg-white/15 px-3 py-1.5 rounded text-sm">All Completed</button>
+    <button type="button" data-mass="dnf"
+            class="bg-white/10 hover:bg-white/15 px-3 py-1.5 rounded text-sm">All DNF</button>
+    <button type="button" data-mass="absent"
+            class="bg-white/10 hover:bg-white/15 px-3 py-1.5 rounded text-sm">All Absent</button>
+    <span class="text-slate-500 text-xs ml-auto italic">
+      Times accept <span class="numeral">5:23</span>, <span class="numeral">323</span>, or <span class="numeral">5.23</span> — all read as 5m 23s.
+    </span>
+  </div>
+
+  <div class="grid gap-2">
+    {% for p in players %}
+      {% set ex = existing.get(p.id) %}
+      {% set cur = ex.status if ex else 'absent' %}
+      <div class="grid sm:grid-cols-12 gap-2 items-center py-2 border-b border-white/5"
+           data-row data-pid="{{ p.id }}">
+        <div class="sm:col-span-3 font-display text-lg">
+          {{ p.display_name or p.name }}
+          <div class="text-[10px] uppercase tracking-widest text-slate-500">{{ p.name }}</div>
+        </div>
+
+        <div class="sm:col-span-5 flex gap-1" role="radiogroup" aria-label="Status for {{ p.display_name or p.name }}">
+          {% for kind, label in [('completed','Completed'),('dnf','DNF'),('absent','Absent')] %}
+            <label class="flex-1 cursor-pointer">
+              <input type="radio" name="status_{{ p.id }}" value="{{ kind }}"
+                     class="peer sr-only" data-status="{{ kind }}"
+                     {% if cur == kind %}checked{% endif %} />
+              <span class="block text-center px-3 py-1.5 rounded border border-white/10 text-xs uppercase tracking-widest font-display
+                           peer-checked:bg-accent peer-checked:text-white peer-checked:border-accent">
+                {{ label }}
+              </span>
+            </label>
+          {% endfor %}
+        </div>
+
+        <div class="sm:col-span-3" data-time-cell>
+          <input type="text" name="time_{{ p.id }}" inputmode="numeric"
+                 placeholder="m:ss"
+                 value="{{ ex.time_str if ex and ex.status == 'completed' else '' }}"
+                 class="numeral w-full bg-navy-800 border border-white/10 rounded px-3 py-2"
+                 data-time-input />
+        </div>
+
+        <div class="sm:col-span-1 text-right">
+          {% if ex and ex.status == 'completed' %}
+            <span class="text-emerald-400 text-xs">●</span>
+          {% elif ex and ex.status == 'dnf' %}
+            <span class="text-yellow-300 text-xs">DNF</span>
+          {% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="mt-4 pt-4 border-t border-white/10 flex justify-between gap-3 flex-wrap">
+    <a href="{{ url_for('admin.index') }}"
+       class="bg-white/10 hover:bg-white/15 px-4 py-2 rounded text-sm">Back</a>
+    <button type="submit"
+            class="bg-accent hover:bg-red-700 text-white font-display tracking-widest uppercase px-6 py-2 rounded">
+      Save day
+    </button>
+  </div>
+</form>
+
+<script>
+(function () {
+  const form = document.getElementById('bulk-form');
+  if (!form) return;
+
+  // Disable + visually mute time input when status != completed.
+  function syncRow(row) {
+    const checked = row.querySelector('input[type=radio]:checked');
+    const input = row.querySelector('[data-time-input]');
+    const cell = row.querySelector('[data-time-cell]');
+    const completed = checked && checked.value === 'completed';
+    input.disabled = !completed;
+    cell.style.opacity = completed ? '1' : '0.4';
+  }
+  form.querySelectorAll('[data-row]').forEach((row) => {
+    row.querySelectorAll('input[type=radio]').forEach((r) =>
+      r.addEventListener('change', () => syncRow(row))
+    );
+    syncRow(row);
+  });
+
+  // Mass-set buttons set every row's status without touching time fields.
+  form.querySelectorAll('[data-mass]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const status = btn.dataset.mass;
+      form.querySelectorAll('[data-row]').forEach((row) => {
+        const radio = row.querySelector(`input[value="${status}"]`);
+        if (radio) {
+          radio.checked = true;
+          syncRow(row);
+        }
+      });
+    });
+  });
+
+  // Tab order: status → time → notes (n/a) → next row's status.
+  // Default focus: first time field.
+  const firstTime = form.querySelector('[data-time-input]:not([disabled])');
+  if (firstTime) firstTime.focus();
+})();
+</script>
+
+{% endif %}
+
+{% endblock %}

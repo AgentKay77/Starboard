@@ -1,5 +1,6 @@
-{# Admin pages keep their original Tailwind-based styling — only Hunter sees
-   them and the public design rewrite stops at the user surfaces. #}
+{# Admin pages keep their Tailwind utility classes for layout, but text and
+   surface colors are mapped to the public design tokens with higher-specificity
+   selectors so they actually win against Tailwind CDN's late style injection. #}
 {% extends "base.html" %}
 
 {% block extra_head %}
@@ -22,15 +23,72 @@
   };
 </script>
 <style>
-  .scoreboard { background: var(--paper); border: 1px solid var(--rule); border-radius: var(--radius); }
-  .numeral { font-family: 'JetBrains Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
-  .text-white, .text-slate-100, .text-slate-200, .text-slate-300 { color: var(--ink); }
-  .text-slate-400, .text-slate-500 { color: var(--ink-3); }
-  .border-white\/5, .border-white\/10 { border-color: var(--rule-soft); }
-  input, select, textarea { background: var(--bg) !important; color: var(--ink) !important;
-    border-color: var(--rule) !important; }
-  .bg-navy-800 { background: var(--bg-2) !important; }
-  .bg-accent { background: var(--ink) !important; color: var(--bg) !important; }
-  .hover\:bg-red-700:hover { background: var(--ink-2) !important; }
+  /* Admin surface tokens — `body` prefix bumps specificity above Tailwind's
+     single-class utilities so we win the cascade race against the CDN's
+     runtime style injection. */
+  body .scoreboard {
+    background: var(--paper); border: 1px solid var(--rule);
+    border-radius: var(--radius); color: var(--ink);
+  }
+  body .scoreboard:hover { background: var(--bg-2); }
+  body .ticker-top { border-top: 3px solid var(--accent); }
+  body .numeral, body .font-mono {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  body .font-display {
+    font-family: 'Instrument Serif', Georgia, serif;
+    letter-spacing: -0.005em;
+  }
+
+  /* Text colors: dark ink for headlines, muted gray-brown for secondary. */
+  body .text-white,
+  body .text-slate-100,
+  body .text-slate-200,
+  body .text-slate-300 { color: var(--ink); }
+  body .text-slate-400 { color: var(--ink-3); }
+  body .text-slate-500 { color: var(--ink-4); }
+  body .text-accent    { color: var(--accent); }
+
+  /* Status colors: keep semantic meaning on the warm palette. */
+  body .text-emerald-400 { color: var(--good); }
+  body .text-rose-400    { color: var(--bad); }
+  body .text-yellow-300  { color: var(--accent-2); }
+  body .text-blue-300    { color: var(--accent-3); }
+
+  /* Surfaces & borders */
+  body .bg-navy-800,
+  body .bg-navy-900,
+  body .bg-navy-950   { background: var(--bg-2); }
+  body .bg-white\/5   { background: var(--bg-2); }
+  body .bg-white\/10  { background: var(--bg-2); }
+  body .hover\:bg-white\/5:hover  { background: var(--bg-2); }
+  body .hover\:bg-white\/15:hover { background: var(--rule); }
+
+  body .border-white\/5,
+  body .border-white\/10 { border-color: var(--rule); }
+
+  /* Status pill backgrounds (used on player rows / late markers). */
+  body .bg-yellow-500\/15 { background: color-mix(in oklab, var(--accent-2) 18%, transparent); }
+  body .bg-blue-500\/15   { background: color-mix(in oklab, var(--accent-3) 18%, transparent); }
+  body .border-yellow-500\/30 { border-color: color-mix(in oklab, var(--accent-2) 40%, transparent); }
+  body .border-blue-500\/30   { border-color: color-mix(in oklab, var(--accent-3) 40%, transparent); }
+
+  /* Primary action button: dark ink on cream, matches public .btn.primary. */
+  body .bg-accent {
+    background: var(--ink); color: var(--bg);
+  }
+  body .hover\:bg-red-700:hover { background: var(--ink-2); }
+
+  /* Form fields */
+  body input, body select, body textarea {
+    background: var(--bg); color: var(--ink);
+    border: 1px solid var(--rule);
+  }
+  body input:focus, body select:focus, body textarea:focus { border-color: var(--ink); outline: none; }
+
+  /* Tables — admin templates use bare `table` with utility-styled cells. */
+  body table { color: var(--ink); }
+  body table th { color: var(--ink-3); }
 </style>
 {% endblock %}

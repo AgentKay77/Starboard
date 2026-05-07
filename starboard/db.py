@@ -75,6 +75,22 @@ CREATE INDEX IF NOT EXISTS idx_rating_history_player ON rating_history(player_id
 CREATE INDEX IF NOT EXISTS idx_rating_history_day ON rating_history(day_id);
 CREATE INDEX IF NOT EXISTS idx_rating_history_kind ON rating_history(kind);
 CREATE INDEX IF NOT EXISTS idx_weekly_awards_player ON weekly_awards(player_id);
+
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY,
+    timestamp TEXT NOT NULL,
+    user_id INTEGER REFERENCES users(id),
+    action TEXT NOT NULL,
+    detail TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON audit_log(timestamp DESC);
 """
 
 
