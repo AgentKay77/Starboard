@@ -17,9 +17,12 @@
   <div class="theory-grid" style="--cell: 32px; grid-template-columns: repeat({{ board.size }}, var(--cell));" data-mode="pick">
     {% for r in range(board.size) %}
       {% for c in range(board.size) %}
+        {% set rid = board.regions[r][c] %}
         {% set is_star = (r, c) in star_pairs %}
         {% set pick_idx = ns.picks.get((r, c)) %}
-        <div class="theory-cell theory-region-{{ board.regions[r][c] }}{% if is_star %} has-star{% endif %}{% if pick_idx %} pick-marked{% endif %}">
+        {% set right_diff = c < board.size - 1 and board.regions[r][c + 1] != rid %}
+        {% set below_diff = r < board.size - 1 and board.regions[r + 1][c] != rid %}
+        <div class="theory-cell theory-region-{{ rid }}{% if is_star %} has-star{% endif %}{% if pick_idx %} pick-marked{% endif %}{% if right_diff %} boundary-right{% endif %}{% if below_diff %} boundary-bottom{% endif %}{% if c == board.size - 1 %} frame-right{% endif %}{% if r == board.size - 1 %} frame-bottom{% endif %}">
           {% if pick_idx %}<span class="pick-num">{{ pick_idx }}</span>{% endif %}
         </div>
       {% endfor %}

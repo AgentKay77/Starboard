@@ -18,9 +18,12 @@
   const canEditBoard = root.dataset.canEditBoard === '1';
   const editingExisting = existing !== null && !canEditBoard;
 
-  // State.
+  // State.  Unpainted cells use -1 as a sentinel so a tap with any region
+  // tool produces an obvious visible change. validate_board() on the server
+  // rejects -1, so the user is forced to fill the grid before submitting.
+  const UNPAINTED = -1;
   let size = existing ? existing.size : (sizeChoices[sizeChoices.length - 1] || 10);
-  let regions = existing ? cloneGrid(existing.regions) : freshGrid(size, 0);
+  let regions = existing ? cloneGrid(existing.regions) : freshGrid(size, UNPAINTED);
   let stars = existing ? existing.stars.map((s) => [s[0], s[1]]) : [];
   let pickOrder = []; // list of "r,c" strings
   let tool = existing && !canEditBoard ? 'pick' : 'paint:0';
@@ -52,7 +55,7 @@
       if (!sizeChoices.includes(newSize)) return;
       // Re-init grid; preserve nothing because the shape changed.
       size = newSize;
-      regions = freshGrid(size, 0);
+      regions = freshGrid(size, UNPAINTED);
       stars = [];
       pickOrder = [];
       // If we were on a region-tool that no longer exists, fall back.
@@ -116,7 +119,21 @@
     for (let r = 0; r < size; r++) {
       for (let c = 0; c < size; c++) {
         const cell = document.createElement('div');
-        cell.className = `theory-cell theory-region-${regions[r][c]}`;
+        const rid = regions[r][c];
+        const regionClass = rid === UNPAINTED
+          ? 'theory-region-unpainted'
+          : `theory-region-${rid}`;
+        const classes = ['theory-cell', regionClass];
+        // Heavy ink boundary between cells that belong to different regions
+        // — that's the puzzle's region outline.
+        const rightDiffers = c < size - 1 && regions[r][c + 1] !== rid;
+        const belowDiffers = r < size - 1 && regions[r + 1][c] !== rid;
+        if (rightDiffers) classes.push('boundary-right');
+        if (belowDiffers) classes.push('boundary-bottom');
+        // Outer frame on the rightmost column / bottom row.
+        if (c === size - 1) classes.push('frame-right');
+        if (r === size - 1) classes.push('frame-bottom');
+        cell.className = classes.join(' ');
         cell.dataset.r = r;
         cell.dataset.c = c;
         const key = `${r},${c}`;
@@ -170,8 +187,14 @@
         'Partial sequences are fine.';
       return;
     }
+    const unpaintedCount = countUnpainted();
     if (tool.startsWith('paint:')) {
-      hint.textContent = `Painting region ${parseInt(tool.split(':')[1], 10) + 1}. Tap cells to assign them.`;
+      const regionIdx = parseInt(tool.split(':')[1], 10);
+      const ownCount = countCellsInRegion(regionIdx);
+      const targetCount = size;  // each region must hold exactly `size` cells
+      hint.textContent =
+        `Painting region ${regionIdx + 1} (${ownCount}/${targetCount} cells). ` +
+        `${unpaintedCount} cell(s) unpainted.`;
     } else if (tool === 'star') {
       hint.textContent = `Place ${2 * size} stars total. Tap to toggle. Currently placed: ${stars.length}.`;
     } else if (tool === 'pick') {
@@ -181,10 +204,47 @@
     }
   }
 
+  function countUnpainted() {
+    let n = 0;
+    for (let r = 0; r < size; r++)
+      for (let c = 0; c < size; c++)
+        if (regions[r][c] === UNPAINTED) n++;
+    return n;
+  }
+  function countCellsInRegion(rid) {
+    let n = 0;
+    for (let r = 0; r < size; r++)
+      for (let c = 0; c < size; c++)
+        if (regions[r][c] === rid) n++;
+    return n;
+  }
+
   // Serialize state into hidden inputs at submit time.
   if (form) {
-    form.addEventListener('submit', () => {
+    form.addEventListener('submit', (e) => {
       if (!toggle.checked) return;
+      // Author-side validation in Mode A: every cell must be painted before
+      // the server's stricter check kicks in. Avoids losing a long paint to
+      // a "regions[r][c] not in [0,size)" rejection from the server.
+      if (!existing) {
+        const unpainted = countUnpainted();
+        if (unpainted > 0) {
+          e.preventDefault();
+          alert(
+            `Solve theory: ${unpainted} cell(s) still unpainted. ` +
+            `Pick a region color and tap them, or untick "Solve Theory" to skip.`
+          );
+          return;
+        }
+        if (stars.length !== 2 * size) {
+          e.preventDefault();
+          alert(
+            `Solve theory: place exactly ${2 * size} stars (currently ${stars.length}). ` +
+            `Use the ★ Star tool, or untick "Solve Theory" to skip.`
+          );
+          return;
+        }
+      }
       regionsField.value = JSON.stringify(regions);
       // Keep stars sorted so server's set-compare works on either side.
       const sortedStars = stars.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);

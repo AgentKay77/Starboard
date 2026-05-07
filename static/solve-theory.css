@@ -33,20 +33,44 @@
 
 .theory-grid-wrap { overflow-x: auto; padding: 4px; }
 .theory-grid {
-  display: grid; gap: 2px; background: var(--rule);
-  border: 1px solid var(--rule);
+  display: grid; gap: 0;
   margin: 0 auto; width: max-content;
   --cell: 36px;
+  /* Outer frame is heavy ink — same weight as the cross-region boundaries
+     the cells themselves draw, so the border looks continuous. */
+  border-top: 2px solid var(--ink);
+  border-left: 2px solid var(--ink);
 }
 .theory-cell {
   width: var(--cell); height: var(--cell);
   display: flex; align-items: center; justify-content: center;
   position: relative; cursor: pointer;
   background: var(--bg-2);
+  /* Hairline rule between same-region cells. Cross-region boundaries
+     overwrite this with .boundary-* classes set during render. */
+  border-right: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
   font-size: 14px; line-height: 1;
   user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.theory-cell.boundary-right  { border-right:  2px solid var(--ink); }
+.theory-cell.boundary-bottom { border-bottom: 2px solid var(--ink); }
+/* Cells in the rightmost column / bottom row that aren't already a
+   cross-region boundary still need the heavy outer frame. */
+.theory-cell.frame-right  { border-right:  2px solid var(--ink); }
+.theory-cell.frame-bottom { border-bottom: 2px solid var(--ink); }
+
+/* Unpainted sentinel — the first user starts here on every cell, so a
+   tap with a region tool gives clear visible feedback. */
+.theory-cell.theory-region-unpainted {
+  background:
+    repeating-linear-gradient(
+      45deg,
+      var(--bg-2) 0 6px,
+      color-mix(in oklab, var(--ink) 6%, var(--bg-2)) 6px 12px
+    );
 }
 .theory-cell.has-star::before {
   content: '★';
