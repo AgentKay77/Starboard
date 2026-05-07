@@ -22,7 +22,7 @@ from flask import (
 )
 from flask_login import current_user, login_required
 
-from starboard import apr, queries, settings as settings_mod, theories
+from starboard import apr, clock, queries, settings as settings_mod, theories
 
 submit_bp = Blueprint("submit", __name__)
 
@@ -58,7 +58,7 @@ def submit():
         return redirect(url_for("auth.account"))
 
     conn = get_db()
-    today = date.today()
+    today = clock.local_today(current_app.config["WEEK_TIMEZONE"])
     lookback = current_app.config["SUBMISSION_LOOKBACK_DAYS"]
     earliest = today - timedelta(days=lookback)
 

@@ -523,7 +523,10 @@ def career_trophies(conn: sqlite3.Connection) -> list[dict]:
 
 
 def current_week_live(conn: sqlite3.Connection, today: date | None = None) -> dict:
-    today = today or date.today()
+    if today is None:
+        from starboard import clock
+
+        today = clock.local_today()
     monday = today - timedelta(days=today.weekday())
     sunday = monday + timedelta(days=6)
 
@@ -568,29 +571,57 @@ def current_week_live(conn: sqlite3.Connection, today: date | None = None) -> di
 
 
 def latest_day(conn: sqlite3.Connection) -> dict | None:
+    """Latest puzzle_day with metadata + every submission for it.
+
+    `entries` is sorted: completed times ascending, then DNFs. Winner is
+    the first entry if any completions exist."""
+    from starboard import clock
+
+    today_iso = clock.local_today().isoformat()
     row = conn.execute(
         """SELECT pd.id, pd.date,
                   (SELECT COUNT(*) FROM submissions s2 WHERE s2.day_id = pd.id) AS field_size
            FROM puzzle_days pd
-           ORDER BY pd.date DESC LIMIT 1"""
+           WHERE pd.date <= ?
+           ORDER BY pd.date DESC LIMIT 1""",
+        (today_iso,),
     ).fetchone()
     if not row:
         return None
-    winner = conn.execute(
-        """SELECT s.time_seconds, p.name, p.display_name, p.id AS pid
+    rows = conn.execute(
+        """SELECT s.time_seconds, s.status, p.name, p.display_name, p.id AS pid
            FROM submissions s
            JOIN players p ON p.id = s.player_id
-           WHERE s.day_id = ? AND s.status = 'completed'
-           ORDER BY s.time_seconds ASC LIMIT 1""",
+           WHERE s.day_id = ?
+           ORDER BY (s.status = 'dnf') ASC,
+                    s.time_seconds ASC""",
         (row["id"],),
-    ).fetchone()
+    ).fetchall()
+    entries = []
+    rank = 0
+    for r in rows:
+        is_completed = r["status"] == "completed"
+        if is_completed:
+            rank += 1
+        entries.append(
+            {
+                "player_id": r["pid"],
+                "display_name": _display(r),
+                "status": r["status"],
+                "time_seconds": r["time_seconds"] if is_completed else None,
+                "time_str": format_time(r["time_seconds"]) if is_completed else "DNF",
+                "rank": rank if is_completed else None,
+            }
+        )
+    winner = entries[0] if entries and entries[0]["status"] == "completed" else None
     return {
         "date": row["date"],
         "field_size": row["field_size"],
-        "winner_name": _display(winner) if winner else None,
-        "winner_id": winner["pid"] if winner else None,
+        "entries": entries,
+        "winner_name": winner["display_name"] if winner else None,
+        "winner_id": winner["player_id"] if winner else None,
         "winner_time": winner["time_seconds"] if winner else None,
-        "winner_time_str": format_time(winner["time_seconds"]) if winner else "—",
+        "winner_time_str": winner["time_str"] if winner else "—",
     }
 
 

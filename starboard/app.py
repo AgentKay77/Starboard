@@ -87,11 +87,14 @@ def create_app(config: Config | None = None) -> Flask:
         except Exception:
             # Outside a request (e.g. error handler before db is bound).
             enabled = app.config["ENABLE_USER_SUBMISSIONS"]
+        from starboard import clock as _clock
+
+        local_today = _clock.local_today(app.config["WEEK_TIMEZONE"])
         return {
             "site_name": "Starboard",
             "submissions_enabled": enabled,
-            "current_year": date.today().year,
-            "today_iso": date.today().isoformat(),
+            "current_year": local_today.year,
+            "today_iso": local_today.isoformat(),
         }
 
     @app.template_filter("rating")

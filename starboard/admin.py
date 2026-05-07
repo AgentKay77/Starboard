@@ -16,7 +16,7 @@ from flask import (
 from flask_login import current_user, login_required
 from markupsafe import Markup
 
-from starboard import apr, queries, settings as settings_mod, theories as theories_mod, weekly
+from starboard import apr, clock, queries, settings as settings_mod, theories as theories_mod, weekly
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -45,9 +45,11 @@ def _flash_closed_week_warning(day_date_iso: str) -> None:
     admin to manually recompute that week's locked awards."""
     from starboard.app import get_db
 
+    from flask import current_app
+
     day_d = date.fromisoformat(day_date_iso)
     week_start = _monday_of(day_d)
-    today_monday = _monday_of(date.today())
+    today_monday = _monday_of(clock.local_today(current_app.config["WEEK_TIMEZONE"]))
     if week_start >= today_monday:
         return  # current or future week — awards aren't locked yet
     conn = get_db()
@@ -124,7 +126,7 @@ def index():
         "admin/index.html",
         counts=counts,
         user_submissions_enabled=settings_mod.submissions_enabled(conn, env_default),
-        today=date.today().isoformat(),
+        today=clock.local_today(current_app.config["WEEK_TIMEZONE"]).isoformat(),
     )
 
 
@@ -134,6 +136,7 @@ def index():
 @admin_bp.route("/players", methods=["GET", "POST"])
 @admin_required
 def players():
+    from flask import current_app
     from starboard.app import get_db
 
     conn = get_db()
@@ -142,7 +145,12 @@ def players():
         if action == "create":
             name = (request.form.get("name") or "").strip()
             display = (request.form.get("display_name") or "").strip() or None
-            joined = (request.form.get("joined_date") or "").strip() or date.today().isoformat()
+            joined = (
+                (request.form.get("joined_date") or "").strip()
+                or clock.local_today(
+                    current_app.config["WEEK_TIMEZONE"]
+                ).isoformat()
+            )
             if not name:
                 flash("Player name is required.", "error")
             else:

@@ -280,7 +280,9 @@ def recompute_all_weeks(conn: sqlite3.Connection) -> None:
         return
     first = date.fromisoformat(rows[0])
     last = date.fromisoformat(rows[1])
-    today = date.today()
+    from starboard import clock
+
+    today = clock.local_today()
     open_week_start = today - timedelta(days=today.weekday())
     cur = first - timedelta(days=first.weekday())
     conn.execute("DELETE FROM weekly_awards")

@@ -115,25 +115,44 @@
 
 {# ───── Two-up: latest day + current week ───── #}
 <section class="grid grid-2">
-  <div class="card">
-    <div class="row between" style="margin-bottom: 16px;">
+  <div class="card flush">
+    <div class="row between" style="padding: var(--pad-card); padding-bottom: 12px;">
       <span class="smallcaps">Latest Day</span>
       {% if latest_day %}<span class="num muted fs-13">{{ latest_day.date }}</span>{% endif %}
     </div>
-    {% if latest_day and latest_day.winner_name %}
-      <div class="row between baseline">
-        <a href="{{ url_for('public.player_view', player_id=latest_day.winner_id) }}" class="serif fs-36">
-          {{ latest_day.winner_name }}
-        </a>
-        <div style="text-align: right;">
-          <div class="num serif fs-36 accent">{{ latest_day.winner_time_str }}</div>
-          <div class="smallcaps">winning time</div>
-        </div>
+    {% if latest_day and latest_day.entries %}
+      <table class="std" style="margin-top: -4px;">
+        <thead>
+          <tr>
+            <th style="width: 36px;">#</th>
+            <th>Player</th>
+            <th class="ralign">Time</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in latest_day.entries %}
+            <tr>
+              <td class="num{% if e.rank == 1 %} accent{% endif %}">
+                {% if e.rank %}{{ e.rank }}{% else %}—{% endif %}
+              </td>
+              <td>
+                <a href="{{ url_for('public.player_view', player_id=e.player_id) }}">{{ e.display_name }}</a>
+              </td>
+              <td class="ralign num{% if e.rank == 1 %} accent{% endif %}{% if e.status == 'dnf' %} muted-2{% endif %}">
+                {{ e.time_str }}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="row between muted fs-13" style="padding: 12px var(--pad-card); border-top: 1px solid var(--rule-soft);">
+        <span>Field of {{ latest_day.field_size }}</span>
+        {% if latest_day.winner_name %}
+          <span>Won by <a href="{{ url_for('public.player_view', player_id=latest_day.winner_id) }}">{{ latest_day.winner_name }}</a></span>
+        {% endif %}
       </div>
-      <hr class="hr-soft" style="margin: 20px 0;" />
-      <div class="muted fs-13">Field of {{ latest_day.field_size }}</div>
     {% else %}
-      <p class="muted serif-it">No completed times yet.</p>
+      <p class="muted serif-it" style="padding: 0 var(--pad-card) var(--pad-card);">No submissions yet.</p>
     {% endif %}
   </div>
 
