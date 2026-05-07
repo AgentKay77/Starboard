@@ -47,6 +47,42 @@ def parse_time(raw: str) -> float:
     return float(raw)
 
 
+def parse_bulk_time(raw: str) -> float:
+    """Bulk-entry parser used by the daily-entry page.
+
+    Accepts the three shapes in the bulk-entry spec — `5:23`, `323`, and
+    `5.23` — and normalizes all three to 323 seconds. The dot-as-minute
+    separator only kicks in when the right side has exactly two digits and
+    is < 60, so `45.5` still reads as 45.5 seconds, not 45 minutes."""
+    raw = raw.strip()
+    if not raw:
+        raise ValueError("empty time")
+    if ":" not in raw and raw.count(".") == 1:
+        left, right = raw.split(".")
+        if (
+            left.isdigit() and right.isdigit()
+            and len(right) == 2 and int(right) < 60
+        ):
+            raw = f"{left}:{right}"
+    if ":" in raw:
+        parts = raw.split(":")
+        if len(parts) != 2:
+            raise ValueError(f"unrecognized time format: {raw!r}")
+        m_str, s_str = parts
+        m = int(m_str)
+        s = float(s_str)
+        if m < 0 or s < 0 or s >= 60:
+            raise ValueError(f"unrecognized time format: {raw!r}")
+        return m * 60 + s
+    try:
+        v = float(raw)
+    except ValueError:
+        raise ValueError(f"unrecognized time format: {raw!r}") from None
+    if v < 0:
+        raise ValueError(f"negative time: {raw!r}")
+    return v
+
+
 def _display(row) -> str | None:
     if row is None:
         return None

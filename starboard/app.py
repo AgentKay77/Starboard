@@ -40,6 +40,14 @@ def create_app(config: Config | None = None) -> Flask:
     # Trust X-Forwarded-Proto/Host so url_for emits https://www.starboard.day.
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
+    # Idempotent schema bootstrap so deploys that introduce new tables
+    # (settings, audit_log, …) don't require a manual sqlite3 shell.
+    boot_conn = db_module.connect(cfg.database_path)
+    try:
+        db_module.init_schema(boot_conn)
+    finally:
+        boot_conn.close()
+
     login_manager.init_app(app)
     login_manager.login_view = "auth.login"
     login_manager.login_message_category = "info"
@@ -70,9 +78,18 @@ def create_app(config: Config | None = None) -> Flask:
 
     @app.context_processor
     def _inject_globals():
+        from starboard import settings as settings_mod
+
+        try:
+            enabled = settings_mod.submissions_enabled(
+                get_db(), env_default=app.config["ENABLE_USER_SUBMISSIONS"]
+            )
+        except Exception:
+            # Outside a request (e.g. error handler before db is bound).
+            enabled = app.config["ENABLE_USER_SUBMISSIONS"]
         return {
             "site_name": "Starboard",
-            "submissions_enabled": app.config["ENABLE_USER_SUBMISSIONS"],
+            "submissions_enabled": enabled,
             "current_year": date.today().year,
         }
 

@@ -3,7 +3,7 @@
 {% block content %}
 
 <header class="mb-5">
-  <h1 class="font-display text-3xl tracking-wider uppercase">Admin</h1>
+  <h1 class="font-display text-3xl tracking-wider">Admin</h1>
   <p class="text-slate-400 text-sm">League management.</p>
 </header>
 
@@ -16,45 +16,83 @@
      ] %}
     <div class="scoreboard p-3">
       <div class="text-[10px] uppercase tracking-widest text-slate-400">{{ label }}</div>
-      <div class="numeral text-2xl text-white">{{ counts[key] }}</div>
+      <div class="numeral text-2xl">{{ counts[key] }}</div>
     </div>
   {% endfor %}
 </section>
 
 <section class="grid sm:grid-cols-2 gap-3 mb-6">
-  <a href="{{ url_for('admin.players') }}" class="scoreboard p-4 hover:bg-white/5 ticker-top">
+  <a href="{{ url_for('admin.bulk_day', day_date=today) }}" class="scoreboard p-4 ticker-top">
+    <div class="font-display tracking-widest uppercase text-slate-400 text-xs">Enter</div>
+    <div class="font-display text-2xl">Bulk daily entry · {{ today }}</div>
+    <div class="text-slate-500 text-xs mt-1">All players, one page, one transaction.</div>
+  </a>
+  <a href="{{ url_for('admin.players') }}" class="scoreboard p-4">
     <div class="font-display tracking-widest uppercase text-slate-400 text-xs">Manage</div>
-    <div class="font-display text-2xl text-white">Players</div>
+    <div class="font-display text-2xl">Players</div>
   </a>
-  <a href="{{ url_for('admin.days') }}" class="scoreboard p-4 hover:bg-white/5 ticker-top">
+  <a href="{{ url_for('admin.days') }}" class="scoreboard p-4">
     <div class="font-display tracking-widest uppercase text-slate-400 text-xs">Manage</div>
-    <div class="font-display text-2xl text-white">Days & Submissions</div>
+    <div class="font-display text-2xl">Days &amp; Submissions</div>
   </a>
-  <a href="{{ url_for('admin.users') }}" class="scoreboard p-4 hover:bg-white/5 ticker-top">
+  <a href="{{ url_for('admin.users') }}" class="scoreboard p-4">
     <div class="font-display tracking-widest uppercase text-slate-400 text-xs">Manage</div>
-    <div class="font-display text-2xl text-white">Users</div>
+    <div class="font-display text-2xl">Users</div>
   </a>
-  <a href="{{ url_for('submit.submit') }}" class="scoreboard p-4 hover:bg-white/5 ticker-top">
-    <div class="font-display tracking-widest uppercase text-slate-400 text-xs">Add</div>
-    <div class="font-display text-2xl text-white">Quick Submit</div>
-  </a>
+</section>
+
+<section class="scoreboard p-4 mb-6">
+  <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-3">User self-submissions</h2>
+  <div class="flex items-center justify-between flex-wrap gap-3">
+    <div>
+      <div class="font-display text-lg">
+        User submissions:
+        {% if user_submissions_enabled %}
+          <span class="text-emerald-400">ON</span> — players with claimed profiles can submit their own times for the current day.
+        {% else %}
+          <span class="text-rose-400">OFF</span> — only admins can enter times.
+        {% endif %}
+      </div>
+      <div class="text-slate-500 text-xs mt-1">Toggling writes an audit_log row.</div>
+    </div>
+    <form method="post">
+      <input type="hidden" name="action" value="toggle_user_submissions" />
+      <button type="submit"
+              class="bg-accent hover:bg-red-700 text-white font-display tracking-widest uppercase px-4 py-2 rounded">
+        Turn {{ 'OFF' if user_submissions_enabled else 'ON' }}
+      </button>
+    </form>
+  </div>
+</section>
+
+<section class="scoreboard p-4 mb-6">
+  <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-3">Jump to a specific day</h2>
+  <form method="post" class="flex gap-2 flex-wrap">
+    <input type="hidden" name="action" value="go_to_bulk" />
+    <input type="date" name="date" value="{{ today }}" required
+           class="flex-1 bg-navy-800 border border-white/10 rounded px-3 py-2 numeral" />
+    <button type="submit"
+            class="bg-white/10 hover:bg-white/15 px-4 py-2 rounded">
+      Open bulk entry
+    </button>
+  </form>
 </section>
 
 <section class="scoreboard p-4">
   <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-3">Recompute</h2>
   <div class="grid sm:grid-cols-2 gap-3">
     <form method="post" action="{{ url_for('admin.recompute_ratings') }}">
-      <button type="submit" class="w-full bg-white/10 hover:bg-white/15 text-slate-100 font-display tracking-widest uppercase py-2 rounded">
+      <button type="submit" class="w-full bg-white/10 hover:bg-white/15 font-display tracking-widest uppercase py-2 rounded">
         APR ratings
       </button>
     </form>
     <form method="post" action="{{ url_for('admin.recompute_weeks') }}">
-      <button type="submit" class="w-full bg-white/10 hover:bg-white/15 text-slate-100 font-display tracking-widest uppercase py-2 rounded">
+      <button type="submit" class="w-full bg-white/10 hover:bg-white/15 font-display tracking-widest uppercase py-2 rounded">
         All weekly awards
       </button>
     </form>
     <form method="post" action="{{ url_for('admin.recompute_one_week') }}" class="sm:col-span-2 flex gap-2">
-      <input type="date" name="week_start" required class="flex-1 bg-navy-800 border border-white/10 rounded px-3 py-2 text-white" />
+      <input type="date" name="week_start" required class="flex-1 bg-navy-800 border border-white/10 rounded px-3 py-2 numeral" />
       <button type="submit" class="bg-accent hover:bg-red-700 text-white font-display tracking-widest uppercase px-4 py-2 rounded">
         Recompute one week
       </button>

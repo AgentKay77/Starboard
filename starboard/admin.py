@@ -16,7 +16,7 @@ from flask import (
 from flask_login import current_user, login_required
 from markupsafe import Markup
 
-from starboard import apr, queries, weekly
+from starboard import apr, queries, settings as settings_mod, weekly
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -71,12 +71,37 @@ def _flash_closed_week_warning(day_date_iso: str) -> None:
 # ---------- dashboard ----------
 
 
-@admin_bp.route("/")
+@admin_bp.route("/", methods=["GET", "POST"])
 @admin_required
 def index():
+    from flask import current_app
     from starboard.app import get_db
 
     conn = get_db()
+    env_default = current_app.config["ENABLE_USER_SUBMISSIONS"]
+
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "toggle_user_submissions":
+            currently_on = settings_mod.submissions_enabled(conn, env_default)
+            new_value = not currently_on
+            settings_mod.set_submissions_enabled(
+                conn, new_value, user_id=current_user.id
+            )
+            flash(
+                f"User submissions are now "
+                f"{'ON' if new_value else 'OFF'}.",
+                "success",
+            )
+        elif action == "go_to_bulk":
+            d = (request.form.get("date") or "").strip()
+            try:
+                date.fromisoformat(d)
+                return redirect(url_for("admin.bulk_day", day_date=d))
+            except ValueError:
+                flash("Pick a valid date.", "error")
+        return redirect(url_for("admin.index"))
+
     counts = {
         "players": conn.execute("SELECT COUNT(*) FROM players").fetchone()[0],
         "active_players": conn.execute(
@@ -95,7 +120,12 @@ def index():
             "SELECT COUNT(DISTINCT week_start) FROM weekly_awards"
         ).fetchone()[0],
     }
-    return render_template("admin/index.html", counts=counts)
+    return render_template(
+        "admin/index.html",
+        counts=counts,
+        user_submissions_enabled=settings_mod.submissions_enabled(conn, env_default),
+        today=date.today().isoformat(),
+    )
 
 
 # ---------- players ----------
@@ -385,3 +415,149 @@ def recompute_one_week_form(week_start: str):
     """GET handler so closed-week warning flashes can link to a one-click
     confirmation page that POSTs the recompute."""
     return render_template("admin/recompute_week.html", week_start=week_start)
+
+
+# ---------- bulk daily entry ----------
+
+
+def _get_or_create_day(conn, day_date_iso: str) -> int:
+    row = conn.execute(
+        "SELECT id FROM puzzle_days WHERE date = ?", (day_date_iso,)
+    ).fetchone()
+    if row:
+        return row["id"]
+    cur = conn.execute(
+        "INSERT INTO puzzle_days (date) VALUES (?)", (day_date_iso,)
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+@admin_bp.route("/days/<day_date>/bulk", methods=["GET", "POST"])
+@admin_required
+def bulk_day(day_date: str):
+    """One-page workflow for the admin to enter every player's result for a
+    single day at once. UPSERTs in a single transaction, then runs the same
+    APR + weekly-awards recompute that `/submit` triggers."""
+    from starboard.app import get_db
+
+    try:
+        the_date = date.fromisoformat(day_date)
+    except ValueError:
+        abort(404)
+
+    conn = get_db()
+    day_id = _get_or_create_day(conn, the_date.isoformat())
+
+    # Active players who had joined by this date.
+    players = conn.execute(
+        """SELECT id, name, display_name FROM players
+           WHERE active = 1 AND joined_date <= ?
+           ORDER BY display_name COLLATE NOCASE, name COLLATE NOCASE""",
+        (the_date.isoformat(),),
+    ).fetchall()
+
+    if request.method == "POST":
+        return _handle_bulk_post(conn, the_date, day_id, players)
+
+    # Existing submissions, keyed by player_id.
+    rows = conn.execute(
+        "SELECT player_id, status, time_seconds FROM submissions WHERE day_id = ?",
+        (day_id,),
+    ).fetchall()
+    existing = {
+        r["player_id"]: {
+            "status": r["status"],
+            "time_str": queries.format_time(r["time_seconds"])
+            if r["time_seconds"] is not None else "",
+        }
+        for r in rows
+    }
+    monday = (the_date - timedelta(days=the_date.weekday())).isoformat()
+    return render_template(
+        "admin/bulk_day.html",
+        day_date=the_date.isoformat(),
+        players=players,
+        existing=existing,
+        week_start=monday,
+    )
+
+
+def _handle_bulk_post(conn, the_date, day_id, players):
+    errors: list[tuple[int, str]] = []
+    counts = {"completed": 0, "dnf": 0, "absent": 0}
+    saved = 0
+    now = _now()
+
+    # Phase 1: validate everything before writing anything.
+    parsed: list[tuple[int, str, float | None]] = []
+    for p in players:
+        pid = p["id"]
+        status = (request.form.get(f"status_{pid}") or "absent").strip()
+        if status not in ("completed", "dnf", "absent"):
+            errors.append((pid, f"unknown status {status!r}"))
+            continue
+        seconds: float | None = None
+        if status == "completed":
+            raw_time = (request.form.get(f"time_{pid}") or "").strip()
+            try:
+                seconds = queries.parse_bulk_time(raw_time)
+                if seconds <= 0:
+                    raise ValueError("non-positive")
+            except ValueError as e:
+                errors.append((pid, f"invalid time {raw_time!r}: {e}"))
+                continue
+        parsed.append((pid, status, seconds))
+
+    if errors:
+        for pid, msg in errors:
+            name = next((p["display_name"] or p["name"] for p in players if p["id"] == pid), pid)
+            flash(f"{name}: {msg}", "error")
+        return redirect(url_for("admin.bulk_day", day_date=the_date.isoformat()))
+
+    # Phase 2: apply in a single transaction.
+    try:
+        with conn:
+            for pid, status, seconds in parsed:
+                existing = conn.execute(
+                    "SELECT id FROM submissions WHERE player_id = ? AND day_id = ?",
+                    (pid, day_id),
+                ).fetchone()
+                if status == "absent":
+                    if existing:
+                        conn.execute(
+                            "DELETE FROM submissions WHERE id = ?", (existing["id"],)
+                        )
+                    counts["absent"] += 1
+                elif existing:
+                    conn.execute(
+                        """UPDATE submissions SET time_seconds = ?, status = ?,
+                           submitted_at = ?, submitted_by_user_id = ?
+                           WHERE id = ?""",
+                        (seconds, status, now, current_user.id, existing["id"]),
+                    )
+                    counts[status] += 1
+                else:
+                    conn.execute(
+                        """INSERT INTO submissions
+                               (player_id, day_id, time_seconds, status,
+                                submitted_at, submitted_by_user_id)
+                           VALUES (?, ?, ?, ?, ?, ?)""",
+                        (pid, day_id, seconds, status, now, current_user.id),
+                    )
+                    counts[status] += 1
+                saved += 1
+    except Exception as e:
+        flash(f"Couldn't save day: {e}", "error")
+        return redirect(url_for("admin.bulk_day", day_date=the_date.isoformat()))
+
+    # Recompute APR (same path /submit uses) and any locked-week awards.
+    apr.recompute_all_ratings(conn)
+    _flash_closed_week_warning(the_date.isoformat())
+
+    flash(
+        f"{saved} saved · {counts['completed']} completed · "
+        f"{counts['dnf']} DNF · {counts['absent']} absent",
+        "success",
+    )
+    return redirect(url_for("admin.bulk_day", day_date=the_date.isoformat()))

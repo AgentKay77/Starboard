@@ -1,4 +1,9 @@
-"""Submission blueprint. Admin-only at launch; gated by ENABLE_USER_SUBMISSIONS."""
+"""Submission blueprint.
+
+Admins can always submit/edit any past or current day. Non-admins can submit
+only when `ENABLE_USER_SUBMISSIONS` (env default) or the runtime override in
+the `settings` table is on, and only for the current day's puzzle. Past days
+must be backfilled by an admin via the bulk-entry page."""
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
@@ -15,9 +20,17 @@ from flask import (
 )
 from flask_login import current_user, login_required
 
-from starboard import apr, queries
+from starboard import apr, queries, settings as settings_mod
 
 submit_bp = Blueprint("submit", __name__)
+
+
+def _self_submit_enabled() -> bool:
+    from starboard.app import get_db
+
+    return settings_mod.submissions_enabled(
+        get_db(), env_default=current_app.config["ENABLE_USER_SUBMISSIONS"]
+    )
 
 
 def _can_submit_for(player_id: int) -> bool:
@@ -25,7 +38,7 @@ def _can_submit_for(player_id: int) -> bool:
         return False
     if current_user.is_admin:
         return True
-    if not current_app.config["ENABLE_USER_SUBMISSIONS"]:
+    if not _self_submit_enabled():
         return False
     return current_user.player_id == player_id
 
@@ -35,7 +48,7 @@ def _can_submit_for(player_id: int) -> bool:
 def submit():
     from starboard.app import get_db
 
-    enabled = current_app.config["ENABLE_USER_SUBMISSIONS"]
+    enabled = _self_submit_enabled()
     if not (current_user.is_admin or enabled):
         abort(403)
     if not current_user.is_admin and current_user.player_id is None:
@@ -51,11 +64,15 @@ def submit():
         players = conn.execute(
             "SELECT id, name, display_name FROM players WHERE active = 1 ORDER BY name"
         ).fetchall()
+        # Admins can backfill within the lookback window.
+        min_date = earliest.isoformat()
     else:
         players = conn.execute(
             "SELECT id, name, display_name FROM players WHERE id = ? AND active = 1",
             (current_user.player_id,),
         ).fetchall()
+        # Non-admins are locked to today.
+        min_date = today.isoformat()
 
     if request.method == "POST":
         return _handle_post(conn, today, earliest, players)
@@ -64,7 +81,7 @@ def submit():
         "submit.html",
         players=players,
         default_date=today.isoformat(),
-        min_date=earliest.isoformat(),
+        min_date=min_date,
         max_date=today.isoformat(),
     )
 
@@ -81,13 +98,23 @@ def _handle_post(conn, today, earliest, _players):
         flash("Pick a valid date.", "error")
         return redirect(url_for("submit.submit"))
 
-    if not (earliest <= the_date <= today) and not current_user.is_admin:
-        flash(
-            f"Submissions are only accepted for the last "
-            f"{(today - earliest).days} days.",
-            "error",
-        )
-        return redirect(url_for("submit.submit"))
+    if current_user.is_admin:
+        if not (earliest <= the_date <= today):
+            flash(
+                f"Admin lookback window is {(today - earliest).days} days. "
+                "Use bulk entry for older days.",
+                "error",
+            )
+            return redirect(url_for("submit.submit"))
+    else:
+        # Non-admins: today only.
+        if the_date != today:
+            flash(
+                "Self-submissions are only accepted for today's puzzle. "
+                "Past days are backfilled by the league admin.",
+                "error",
+            )
+            return redirect(url_for("submit.submit"))
 
     try:
         pid = int(raw_pid)
@@ -125,6 +152,25 @@ def _handle_post(conn, today, earliest, _players):
         day_id = cur.lastrowid
     else:
         day_id = day_row["id"]
+
+    # If the day's week has already had awards locked (closed week), only
+    # admins can edit. Non-admins shouldn't ever land here for the current day,
+    # but guard anyway in case clocks wander across midnight.
+    if not current_user.is_admin:
+        from datetime import timedelta as _td
+
+        monday = the_date - _td(days=the_date.weekday())
+        locked = conn.execute(
+            "SELECT 1 FROM weekly_awards WHERE week_start = ? LIMIT 1",
+            (monday.isoformat(),),
+        ).fetchone()
+        if locked:
+            flash(
+                f"The week of {monday.isoformat()} is closed. "
+                "Ask an admin to backfill this entry.",
+                "error",
+            )
+            return redirect(url_for("submit.submit"))
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     existing = conn.execute(
