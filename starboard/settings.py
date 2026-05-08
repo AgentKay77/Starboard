@@ -63,6 +63,21 @@ def submissions_enabled(conn: sqlite3.Connection, env_default: bool) -> bool:
     return get_bool(conn, ENABLE_USER_SUBMISSIONS_KEY, default=env_default)
 
 
+def audit_log(
+    conn: sqlite3.Connection,
+    *,
+    user_id: int | None,
+    action: str,
+    detail: str | None = None,
+) -> None:
+    """Append-only audit row, no settings change."""
+    conn.execute(
+        "INSERT INTO audit_log (timestamp, user_id, action, detail) VALUES (?, ?, ?, ?)",
+        (_now(), user_id, action, detail),
+    )
+    conn.commit()
+
+
 def set_submissions_enabled(
     conn: sqlite3.Connection, value: bool, *, user_id: int
 ) -> None:

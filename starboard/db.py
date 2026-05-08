@@ -91,6 +91,29 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON audit_log(timestamp DESC);
+
+CREATE TABLE IF NOT EXISTS puzzle_boards (
+    id INTEGER PRIMARY KEY,
+    day_id INTEGER NOT NULL UNIQUE
+        REFERENCES puzzle_days(id) ON DELETE CASCADE,
+    size INTEGER NOT NULL CHECK (size BETWEEN 7 AND 10),
+    regions_json TEXT NOT NULL,           -- NxN list[list[int]] of region IDs
+    stars_json   TEXT NOT NULL,           -- sorted [[r,c], ...], length 2*size
+    created_by_user_id INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS solve_theories (
+    id INTEGER PRIMARY KEY,
+    day_id  INTEGER NOT NULL REFERENCES puzzle_days(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id)       ON DELETE CASCADE,
+    pick_order_json TEXT NOT NULL,        -- subset of board.stars, ≥1 entry
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE(user_id, day_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_solve_theories_day ON solve_theories(day_id);
 """
 
 
@@ -108,4 +131,23 @@ def connect(path: str | Path) -> sqlite3.Connection:
 
 def init_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    conn.commit()
+    # Column-level migrations layered on top of the CREATE-IF-NOT-EXISTS
+    # baseline. SQLite's `ALTER TABLE ADD COLUMN` is idempotent only via a
+    # PRAGMA-guarded helper, since it errors on a re-run.
+    _ensure_column(
+        conn,
+        "submissions",
+        "assisted",
+        "INTEGER NOT NULL DEFAULT 0",
+    )
+
+
+def _ensure_column(
+    conn: sqlite3.Connection, table: str, column: str, decl: str
+) -> None:
+    cols = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column in cols:
+        return
+    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
     conn.commit()
