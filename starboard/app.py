@@ -68,6 +68,24 @@ def create_app(config: Config | None = None) -> Flask:
         if c is not None:
             c.close()
 
+    @app.after_request
+    def _no_cache_dynamic(resp):
+        """Cloudflare in front of the tunnel happily caches HTML responses
+        that don't say otherwise — that's why the latest-day leaderboard
+        was showing yesterday's submissions. Tell the edge (and the
+        browser) not to cache anything that isn't a static asset.
+        Static files keep Flask's default cacheable headers."""
+        from flask import request
+
+        if request.path.startswith("/static/"):
+            return resp
+        # Cookie-bearing responses (login/signup flows etc.) must already
+        # be private; harden the rest of the dynamic surface too.
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp
+
     @app.errorhandler(403)
     def _forbidden(_e):
         return render_template("403.html"), 403
