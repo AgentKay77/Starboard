@@ -136,6 +136,9 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setenv("SECRET_KEY", "x" * 40)
     monkeypatch.setenv("DATABASE_PATH", str(db_path))
     monkeypatch.setenv("ENABLE_USER_SUBMISSIONS", "true")
+    # Pin tz=UTC so date.today() in tests and clock.local_today() in the
+    # server agree, regardless of when the suite runs.
+    monkeypatch.setenv("WEEK_TIMEZONE", "UTC")
     cfg = Config.from_env()
     app = create_app(cfg)
     app.config.update(TESTING=True)
@@ -390,7 +393,7 @@ def test_assisted_solve_is_recorded_as_dnf_with_time_kept(app):
     """Honor-pledge: 'I used checks/hints' converts the time into a DNF row
     while preserving the recorded time so the player can still see it on
     their profile, and the rating system treats it as a DNF."""
-    today = clock.local_today().isoformat()
+    today = date.today().isoformat()
     with app.test_client() as cl:
         _login(cl, "alice")
         r = cl.post(
@@ -422,7 +425,7 @@ def test_assisted_solve_is_recorded_as_dnf_with_time_kept(app):
 def test_completed_without_method_is_rejected(app):
     """A completed-status submission without a method choice flashes an
     error and writes nothing — the user has to consciously pick one."""
-    today = clock.local_today().isoformat()
+    today = date.today().isoformat()
     with app.test_client() as cl:
         _login(cl, "alice")
         r = cl.post(

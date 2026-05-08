@@ -13,23 +13,34 @@
   font-size: 12px; line-height: 1; user-select: none;
 }
 .theory-tool[data-active="1"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.theory-tool[data-full="1"]:not([data-active="1"]) {
+  /* Region whose cell count is already exactly size — render in a quieter
+     state so the user can see which regions still need attention. */
+  opacity: 0.7;
+}
+.theory-tool[data-full="1"]::after {
+  content: '✓';
+  margin-left: 4px; font-size: 11px;
+  color: var(--good);
+}
+.theory-tool[data-active="1"][data-full="1"]::after { color: var(--bg); }
 .theory-tool .swatch {
   width: 14px; height: 14px; border-radius: 3px; display: inline-block;
   border: 1px solid rgba(0, 0, 0, 0.15);
 }
 
-/* Region color palette — N + 1 colors (we cap N at 10).  Warm-celestial
-   spectrum so it stays in the design family. */
-.theory-region-0  { background: #d8b56a; }
-.theory-region-1  { background: #c97f6a; }
-.theory-region-2  { background: #a3b88a; }
-.theory-region-3  { background: #88a8b9; }
-.theory-region-4  { background: #b58cb1; }
-.theory-region-5  { background: #d3a279; }
-.theory-region-6  { background: #8aa97c; }
-.theory-region-7  { background: #c69f87; }
-.theory-region-8  { background: #9b95c2; }
-.theory-region-9  { background: #b8aa72; }
+/* Region color palette — one per region, distinct enough on warm cream
+   that adjacent stripes are obviously different.  N=10 max. */
+.theory-region-0  { background: #d99a3d; }
+.theory-region-1  { background: #c2553f; }
+.theory-region-2  { background: #6a8f4a; }
+.theory-region-3  { background: #4a7aa3; }
+.theory-region-4  { background: #8d5fa6; }
+.theory-region-5  { background: #d97a55; }
+.theory-region-6  { background: #4f8a6e; }
+.theory-region-7  { background: #b06b41; }
+.theory-region-8  { background: #6a64a8; }
+.theory-region-9  { background: #97883d; }
 
 .theory-grid-wrap { overflow-x: auto; padding: 4px; }
 .theory-grid {

@@ -130,7 +130,13 @@
         btn.type = 'button';
         btn.className = 'theory-tool';
         btn.dataset.kind = `paint:${i}`;
-        btn.innerHTML = `<span class="swatch theory-region-${i}"></span>R${i + 1}`;
+        const ct = countCellsInRegion(i);
+        const ok = ct === size;
+        // Show "R3 4/10" so it's obvious which regions still need cells.
+        btn.innerHTML =
+          `<span class="swatch theory-region-${i}"></span>` +
+          `R${i + 1} <span class="ct" style="opacity: 0.7; font-size: 11px; margin-left: 2px;">${ct}/${size}</span>`;
+        if (ok) btn.dataset.full = '1';
         if (tool === `paint:${i}`) btn.dataset.active = '1';
         btn.addEventListener('click', () => { tool = `paint:${i}`; render(); });
         tools.appendChild(btn);
@@ -312,6 +318,33 @@
           alert(
             `Solve theory: ${unpainted} cell(s) still unpainted. ` +
             `Pick a region color and drag/tap to fill them, or untick "Solve Theory" to skip.`
+          );
+          return;
+        }
+        // Catch the "you painted 9 of 10 regions" mistake before the
+        // server rejects it: every region 0..size-1 must show up.
+        const tally = new Array(size).fill(0);
+        for (let r = 0; r < size; r++)
+          for (let c = 0; c < size; c++) tally[regions[r][c]]++;
+        const missing = [];
+        const wrongCount = [];
+        for (let i = 0; i < size; i++) {
+          if (tally[i] === 0) missing.push(`R${i + 1}`);
+          else if (tally[i] !== size) wrongCount.push(`R${i + 1} has ${tally[i]} (need ${size})`);
+        }
+        if (missing.length) {
+          e.preventDefault();
+          alert(
+            `Solve theory: every region must be painted. Missing: ${missing.join(', ')}. ` +
+            `Pick the missing color and paint exactly ${size} cells with it.`
+          );
+          return;
+        }
+        if (wrongCount.length) {
+          e.preventDefault();
+          alert(
+            `Solve theory: each region must hold exactly ${size} cells. ` +
+            `Off: ${wrongCount.join('; ')}.`
           );
           return;
         }

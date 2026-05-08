@@ -48,18 +48,18 @@
     {# Honor pledge — only meaningful for completed solves. JS hides this
        fieldset when status=DNF since the question doesn't apply. #}
     <fieldset class="field" id="method-field" style="border: 0; padding: 0; margin-bottom: 16px;">
-      <legend>Honor pledge</legend>
-      <div class="stack stack-8" style="margin-top: 6px;">
-        <label class="row" style="gap: 10px; cursor: pointer;">
-          <input type="radio" name="solve_method" value="clean" id="method-clean" />
+      <legend class="label">Honor pledge</legend>
+      <div class="stack stack-8" style="margin-top: 8px;">
+        <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; padding: 4px 0;">
+          <input type="radio" name="solve_method" value="clean" id="method-clean" style="margin-top: 3px;" />
           <span class="fs-14">I am telling the truth and did not use checks or hints.</span>
         </label>
-        <label class="row" style="gap: 10px; cursor: pointer;">
-          <input type="radio" name="solve_method" value="assisted" id="method-assisted" />
+        <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; padding: 4px 0;">
+          <input type="radio" name="solve_method" value="assisted" id="method-assisted" style="margin-top: 3px;" />
           <span class="fs-14">I used checks/hints — count this as a DNF.</span>
         </label>
       </div>
-      <span class="hint">An assisted solve still records your time so it shows on your profile, but the rating system treats it as a DNF.</span>
+      <span class="hint" style="margin-top: 8px;">Assisted solves still record your time on your profile, but the rating system treats them as a DNF.</span>
     </fieldset>
 
     {# ───── Solve Theory (optional) ───── #}
