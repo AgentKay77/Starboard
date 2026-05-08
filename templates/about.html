@@ -1,0 +1,294 @@
+{% extends "base.html" %}
+{% set active_nav = 'about' %}
+{% block title %}How APR works{% endblock %}
+{% block content %}
+
+{# Worked example. The numbers below are pre-computed against the actual
+   APR formulas in starboard/apr.py — if you tweak K, the floors, or
+   RATING_PER_SIGMA, regenerate this list. #}
+{% set example_players = [
+  {'name': 'Julian',  'status': 'completed', 'time': 76.4,  'before': 1842,
+   'actual_z': 1.296, 'expected_z': 0.156, 'raw_delta': 25.08,  'delta': 38.67},
+  {'name': 'Anne',    'status': 'completed', 'time': 82.1,  'before': 1797,
+   'actual_z': 0.510, 'expected_z': 0.044, 'raw_delta': 10.25,  'delta': 23.84},
+  {'name': 'Chidi',   'status': 'completed', 'time': 89.0,  'before': 1758,
+   'actual_z': -0.441,'expected_z': -0.054,'raw_delta': -8.51,  'delta':  5.08},
+  {'name': 'Jihoon',  'status': 'completed', 'time': 95.7,  'before': 1721,
+   'actual_z': -1.366,'expected_z': -0.146,'raw_delta': -26.84, 'delta': -13.25},
+  {'name': 'Mira',    'status': 'dnf',                       'before': 1689,
+   'actual_z': -2.0,  'expected_z': -0.226,'raw_delta': -39.03, 'delta': -25.44},
+  {'name': 'Lucía',   'status': 'absent',                    'before': 1652,
+   'actual_z': -2.25, 'expected_z': -0.319,'raw_delta': -42.49, 'delta': -28.90},
+] %}
+{% set mean_t = 85.8 %}
+{% set std_t = 7.25 %}
+{% set field_avg = 1779 %}
+{% set drift = -13.59 %}
+
+<div class="stack stack-32" style="max-width: 760px; margin: 0 auto;">
+
+  <header class="page-h">
+    <div>
+      <span class="smallcaps">How it works</span>
+      <h1 class="serif">Adjusted Performance Rating</h1>
+      <p>APR rewards attendance and field-relative speed, not pairwise wins. Here's how a single day's submissions become a rating change.</p>
+    </div>
+  </header>
+
+  {# ───── Status diagram ───── #}
+  <section class="card flush">
+    <div style="padding: var(--pad-card); border-bottom: 1px solid var(--rule);">
+      <span class="smallcaps">Step 0 · The three statuses</span>
+    </div>
+    <div class="grid" style="grid-template-columns: repeat(3, 1fr); gap: 0;">
+      <div style="padding: var(--pad-card); border-right: 1px solid var(--rule);">
+        <div class="serif fs-22" style="color: var(--good)">Completed</div>
+        <p class="muted fs-13" style="margin: 6px 0 0;">
+          Time becomes a z-score against the day's field. Catastrophically slow times are clamped at the DNF floor so there's no "should I just DNF?" cliff.
+        </p>
+      </div>
+      <div style="padding: var(--pad-card); border-right: 1px solid var(--rule);">
+        <div class="serif fs-22" style="color: var(--bad)">DNF</div>
+        <p class="muted fs-13" style="margin: 6px 0 0;">
+          Started, didn't finish. Forced to <span class="num">{{ '%.1f'|format(dnf_floor) }}σ</span>.
+        </p>
+      </div>
+      <div style="padding: var(--pad-card);">
+        <div class="serif fs-22" style="color: var(--accent-2)">Absent</div>
+        <p class="muted fs-13" style="margin: 6px 0 0;">
+          Active player who never submitted. Forced to <span class="num">{{ '%.2f'|format(absent_floor) }}σ</span> — strictly worse than DNF, so engaging always pays.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  {# ───── Constants ───── #}
+  <section class="card">
+    <div class="sec-h"><h2>Constants</h2></div>
+    <div class="grid" style="grid-template-columns: repeat(2, 1fr); gap: 12px;">
+      <div><span class="smallcaps">Starting APR</span><div class="num serif fs-22">{{ initial_rating }}</div></div>
+      <div><span class="smallcaps">K-factor</span><div class="num serif fs-22">{{ K|round|int }}</div></div>
+      <div><span class="smallcaps">Rating per σ</span><div class="num serif fs-22">{{ rating_per_sigma }}</div></div>
+      <div><span class="smallcaps">DNF / Absent floors</span><div class="num serif fs-22">{{ '%.1f'|format(dnf_floor) }}σ &nbsp;/&nbsp; {{ '%.2f'|format(absent_floor) }}σ</div></div>
+    </div>
+  </section>
+
+  {# ───── Worked example: the day's field ───── #}
+  <section>
+    <div class="sec-h">
+      <h2>Step 1 · The day's field</h2>
+      <span class="smallcaps">Worked example · 6 players</span>
+    </div>
+    <div class="card flush">
+      <table class="std">
+        <thead>
+          <tr>
+            <th>Player</th>
+            <th>Status</th>
+            <th class="ralign">Time</th>
+            <th class="ralign">Rating before</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in example_players %}
+            <tr>
+              <td>{{ p.name }}</td>
+              <td>
+                <span class="smallcaps" style="color: {% if p.status == 'completed' %}var(--good){% elif p.status == 'dnf' %}var(--bad){% else %}var(--accent-2){% endif %}">
+                  {{ p.status }}
+                </span>
+              </td>
+              <td class="ralign num">
+                {%- if p.time -%}{{ '%.1f'|format(p.time) }}s{%- else -%}—{%- endif -%}
+              </td>
+              <td class="ralign num">{{ p.before }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {# ───── Step 2: center the times ───── #}
+  <section>
+    <div class="sec-h"><h2>Step 2 · Center the times</h2></div>
+    <div class="card">
+      <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+        <div>
+          <span class="smallcaps">Mean time</span>
+          <div class="num serif fs-28">{{ mean_t }}s</div>
+          <div class="muted fs-13">Across the 4 completed times.</div>
+        </div>
+        <div>
+          <span class="smallcaps">Std deviation</span>
+          <div class="num serif fs-28">{{ std_t }}s</div>
+          <div class="muted fs-13">Population std — n divisor, not n−1.</div>
+        </div>
+      </div>
+      {# Inline SVG: each completed time as a horizontal bar relative to the mean.
+         Faster than mean → green, slower → coral. Bar length scales with |Δt|. #}
+      <svg viewBox="0 0 600 160" style="width: 100%; height: auto; display: block;">
+        {% set bar_h = 22 %}
+        {% set gap = 8 %}
+        {% set cx = 300 %}
+        {% set scale = 18 %}{# px per second from the mean #}
+        <line x1="{{ cx }}" y1="0" x2="{{ cx }}" y2="160" stroke="var(--rule)" stroke-width="1"/>
+        <text x="{{ cx }}" y="14" text-anchor="middle" font-size="9" fill="var(--ink-3)" font-family="JetBrains Mono">mean {{ mean_t }}s</text>
+        {% for p in example_players if p.status == 'completed' %}
+          {% set y = 26 + loop.index0 * (bar_h + gap) %}
+          {% set dt = p.time - mean_t %}
+          {% set bar_len = (dt|abs) * scale %}
+          {% if dt < 0 %}
+            <rect x="{{ cx - bar_len }}" y="{{ y }}" width="{{ bar_len }}" height="{{ bar_h }}"
+                  fill="var(--good)" opacity="0.85"/>
+            <text x="{{ cx - bar_len - 6 }}" y="{{ y + bar_h - 6 }}" text-anchor="end" font-size="11" fill="var(--ink)" font-family="JetBrains Mono">{{ '%.1f'|format(dt) }}s</text>
+          {% else %}
+            <rect x="{{ cx }}" y="{{ y }}" width="{{ bar_len }}" height="{{ bar_h }}"
+                  fill="var(--bad)" opacity="0.85"/>
+            <text x="{{ cx + bar_len + 6 }}" y="{{ y + bar_h - 6 }}" font-size="11" fill="var(--ink)" font-family="JetBrains Mono">+{{ '%.1f'|format(dt) }}s</text>
+          {% endif %}
+          <text x="{{ cx + (bar_len + 30 if dt < 0 else -(bar_len + 30)) }}"
+                y="{{ y + bar_h - 6 }}"
+                text-anchor="{{ 'start' if dt < 0 else 'end' }}"
+                font-size="11" fill="var(--ink)">
+            {{ p.name }}
+          </text>
+        {% endfor %}
+      </svg>
+      <p class="muted fs-13" style="margin: 12px 0 0;">
+        Each completed player's <code>actual_z = −(t − mean_t) / std_t</code>. Faster than the mean → positive. Slower → negative. Anything below <span class="num">{{ '%.1f'|format(dnf_floor) }}σ</span> is clamped to the DNF floor.
+      </p>
+    </div>
+  </section>
+
+  {# ───── Step 3: actual vs expected z ───── #}
+  <section>
+    <div class="sec-h"><h2>Step 3 · Actual vs expected</h2></div>
+    <div class="card">
+      <p class="muted fs-13" style="margin: 0 0 16px;">
+        For every player on the day, <code>expected_z = (rating_before − field_avg_R) / {{ rating_per_sigma }}</code> where <code>field_avg_R</code> is the mean rating of the day's <em>completed</em> players. Field average for this example: <span class="num">{{ field_avg }}</span>.
+      </p>
+      <table class="std">
+        <thead>
+          <tr>
+            <th>Player</th>
+            <th class="ralign">actual z</th>
+            <th class="ralign">expected z</th>
+            <th class="ralign">gap</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in example_players %}
+            {% set gap = p.actual_z - p.expected_z %}
+            <tr>
+              <td>{{ p.name }}</td>
+              <td class="ralign num">{{ '%+.2f'|format(p.actual_z) }}σ</td>
+              <td class="ralign num muted">{{ '%+.2f'|format(p.expected_z) }}σ</td>
+              <td class="ralign num" style="color: {{ 'var(--good)' if gap >= 0 else 'var(--bad)' }};">{{ '%+.2f'|format(gap) }}σ</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="muted serif-it fs-13" style="margin: 12px 0 0;">
+        The gap is the rating-relevant signal. Beating expectations gains APR; falling short loses it.
+      </p>
+    </div>
+  </section>
+
+  {# ───── Step 4: raw delta ───── #}
+  <section>
+    <div class="sec-h"><h2>Step 4 · Raw delta</h2></div>
+    <div class="card">
+      <div class="serif fs-22 center" style="margin: 0 0 16px;">
+        delta = K × (actual_z − expected_z) = <span class="num">{{ K|round|int }}</span> × (actual_z − expected_z)
+      </div>
+      <table class="std">
+        <thead>
+          <tr><th>Player</th><th class="ralign">Raw delta</th></tr>
+        </thead>
+        <tbody>
+          {% for p in example_players %}
+            <tr>
+              <td>{{ p.name }}</td>
+              <td class="ralign num" style="color: {{ 'var(--good)' if p.raw_delta >= 0 else 'var(--bad)' }};">{{ '%+.2f'|format(p.raw_delta) }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {# ───── Step 5: zero-sum redistribution ───── #}
+  <section>
+    <div class="sec-h"><h2>Step 5 · Zero-sum redistribution</h2></div>
+    <div class="card">
+      <p class="muted fs-13" style="margin: 0 0 14px;">
+        Without this step, every absentee/DNF would bleed rating out of the league and the system would deflate over a season. We subtract the mean of all six raw deltas from each delta, which keeps the league's total rating constant without disturbing relative differences.
+      </p>
+      <div class="row" style="gap: 24px; margin-bottom: 16px;">
+        <div>
+          <span class="smallcaps">Sum of raw deltas</span>
+          <div class="num serif fs-22">{{ '%.2f'|format(drift * 6) }}</div>
+        </div>
+        <div>
+          <span class="smallcaps">÷ 6 players = drift</span>
+          <div class="num serif fs-22">{{ '%.2f'|format(drift) }}</div>
+        </div>
+      </div>
+      <table class="std">
+        <thead>
+          <tr>
+            <th>Player</th>
+            <th class="ralign">Raw delta</th>
+            <th class="ralign">− drift</th>
+            <th class="ralign">Final delta</th>
+            <th class="ralign">Rating after</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in example_players %}
+            <tr>
+              <td>{{ p.name }}</td>
+              <td class="ralign num muted">{{ '%+.2f'|format(p.raw_delta) }}</td>
+              <td class="ralign num muted">−({{ '%+.2f'|format(drift) }})</td>
+              <td class="ralign num" style="color: {{ 'var(--good)' if p.delta >= 0 else 'var(--bad)' }};">{{ '%+.2f'|format(p.delta) }}</td>
+              <td class="ralign num serif fs-18">{{ (p.before + p.delta)|round|int }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {# ───── Why H2H ≠ APR ───── #}
+  <section>
+    <div class="sec-h"><h2>Why head-to-head can disagree</h2></div>
+    <div class="card">
+      <p class="fs-14" style="margin: 0 0 12px;">
+        Head-to-head only counts shared days. APR counts every day the player was active. Three things can put a less-frequent winner above a more-frequent one:
+      </p>
+      <ol style="padding-left: 22px; margin: 0; line-height: 1.7;">
+        <li>
+          <strong>Attendance.</strong> Each absence costs roughly <span class="num">{{ K|round|int }}</span> × ({{ '%.2f'|format(absent_floor) }} − expected_z) APR — about <span class="num">−50</span> for a high-rated player. Five missed days = <span class="num">−250</span> APR; that hides a lot of head-to-head wins.
+        </li>
+        <li>
+          <strong>DNFs and clamped slow times.</strong> A DNF or any time below the floor costs ~<span class="num">−45</span> APR for a top player. Two of those wipe a season's worth of close wins.
+        </li>
+        <li>
+          <strong>Field strength on shared days.</strong> Beating someone in a tight field is worth a smaller z-gap than beating them in a spread-out field. APR cares about the gap; H2H counts the win either way.
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  {# ───── Edge case ───── #}
+  <section class="card tinted">
+    <div class="sec-h"><h2>Edge case · &lt; 2 completions</h2></div>
+    <p class="fs-14" style="margin: 0;">
+      A day with fewer than two completed times has no statistical signal — std_t is undefined and z-scores would be noise. Those days are skipped entirely. Nobody's rating changes, including DNFs and absentees. Penalising twelve people because one person submitted alone would be unfair.
+    </p>
+  </section>
+
+</div>
+
+{% endblock %}

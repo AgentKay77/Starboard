@@ -40,6 +40,14 @@ def create_app(config: Config | None = None) -> Flask:
     # Trust X-Forwarded-Proto/Host so url_for emits https://www.starboard.day.
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
+    # Idempotent schema bootstrap so deploys that introduce new tables
+    # (settings, audit_log, …) don't require a manual sqlite3 shell.
+    boot_conn = db_module.connect(cfg.database_path)
+    try:
+        db_module.init_schema(boot_conn)
+    finally:
+        boot_conn.close()
+
     login_manager.init_app(app)
     login_manager.login_view = "auth.login"
     login_manager.login_message_category = "info"
@@ -70,10 +78,23 @@ def create_app(config: Config | None = None) -> Flask:
 
     @app.context_processor
     def _inject_globals():
+        from starboard import settings as settings_mod
+
+        try:
+            enabled = settings_mod.submissions_enabled(
+                get_db(), env_default=app.config["ENABLE_USER_SUBMISSIONS"]
+            )
+        except Exception:
+            # Outside a request (e.g. error handler before db is bound).
+            enabled = app.config["ENABLE_USER_SUBMISSIONS"]
+        from starboard import clock as _clock
+
+        local_today = _clock.local_today(app.config["WEEK_TIMEZONE"])
         return {
             "site_name": "Starboard",
-            "submissions_enabled": app.config["ENABLE_USER_SUBMISSIONS"],
-            "current_year": date.today().year,
+            "submissions_enabled": enabled,
+            "current_year": local_today.year,
+            "today_iso": local_today.isoformat(),
         }
 
     @app.template_filter("rating")
@@ -166,3 +187,78 @@ def h2h_view():
 @public_bp.route("/records")
 def records_view():
     return render_template("records.html", records=queries.records(get_db()))
+
+
+@public_bp.route("/about")
+def about():
+    """Public-facing rules + APR explainer."""
+    from starboard import apr as apr_mod
+
+    return render_template(
+        "about.html",
+        K=apr_mod.K,
+        initial_rating=int(apr_mod.INITIAL_RATING),
+        rating_per_sigma=int(apr_mod.RATING_PER_SIGMA),
+        dnf_floor=apr_mod.DNF_FLOOR,
+        absent_floor=apr_mod.ABSENT_FLOOR,
+    )
+
+
+@public_bp.route("/days/<day_date>/theories")
+def day_theories(day_date: str):
+    from datetime import date as _date
+
+    from flask_login import current_user
+
+    from starboard import theories as theories_mod
+
+    try:
+        the_date = _date.fromisoformat(day_date)
+    except ValueError:
+        abort(404)
+
+    if not current_user.is_authenticated:
+        return render_template(
+            "day_theories.html",
+            day_date=the_date.isoformat(),
+            board=None, theories=[],
+            gated=True, gated_reason="signin",
+        )
+
+    conn = get_db()
+    is_admin = bool(getattr(current_user, "is_admin", False))
+    user_player_id = getattr(current_user, "player_id", None)
+
+    can_view = theories_mod.user_can_view_theories(
+        conn,
+        is_admin=is_admin,
+        user_player_id=user_player_id,
+        day_date=the_date.isoformat(),
+    )
+    if not can_view:
+        return render_template(
+            "day_theories.html",
+            day_date=the_date.isoformat(),
+            board=None, theories=[],
+            gated=True, gated_reason="no_submission",
+        )
+
+    day_row = conn.execute(
+        "SELECT id FROM puzzle_days WHERE date = ?", (the_date.isoformat(),)
+    ).fetchone()
+    if not day_row:
+        return render_template(
+            "day_theories.html",
+            day_date=the_date.isoformat(),
+            board=None, theories=[], gated=False,
+        )
+
+    board = theories_mod.get_board_for_day(conn, day_row["id"])
+    theories_list = theories_mod.get_theories_for_day(conn, day_row["id"])
+    return render_template(
+        "day_theories.html",
+        day_date=the_date.isoformat(),
+        board=board,
+        theories=theories_list,
+        gated=False,
+    )

@@ -145,12 +145,23 @@ def recompute_all_ratings(conn: sqlite3.Connection) -> None:
     Cheap at our scale (~13 active × ~50 days). Re-run whenever a
     submission is inserted, updated, or deleted, or whenever the active
     roster changes.
+
+    Future-dated puzzle_days (relative to the league's local timezone)
+    are skipped so a stray "tomorrow" row — e.g. from a pre-fix
+    submission that landed at 8 pm CT while the server was already on
+    UTC's tomorrow — doesn't penalise everyone as "absent" on a day
+    that hasn't happened yet.
     """
+    from starboard import clock
+
+    today_iso = clock.local_today().isoformat()
+
     cur = conn.cursor()
     cur.execute("DELETE FROM rating_history")
 
     days = cur.execute(
-        "SELECT id, date FROM puzzle_days ORDER BY date ASC, id ASC"
+        "SELECT id, date FROM puzzle_days WHERE date <= ? ORDER BY date ASC, id ASC",
+        (today_iso,),
     ).fetchall()
     active_players = cur.execute(
         "SELECT id, joined_date FROM players WHERE active = 1"

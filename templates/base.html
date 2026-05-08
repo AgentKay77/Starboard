@@ -33,6 +33,7 @@
         <a href="{{ url_for('public.weekly_view') }}"    class="{{ 'active' if active == 'weekly' }}">Weekly</a>
         <a href="{{ url_for('public.h2h_view') }}"       class="{{ 'active' if active == 'h2h' }}">Head-to-Head</a>
         <a href="{{ url_for('public.records_view') }}"   class="{{ 'active' if active == 'records' }}">Records</a>
+        <a href="{{ url_for('public.day_theories', day_date=today_iso) }}" class="{{ 'active' if active == 'theories' }}">Theories</a>
       </nav>
       <div class="header-right">
         {% if current_user.is_authenticated %}
@@ -66,7 +67,8 @@
   </main>
 
   <footer class="app-footer">
-    {{ site_name }} · Daily Stars puzzle league · {{ current_year }}
+    {{ site_name }} · Daily Stars puzzle league · {{ current_year }} ·
+    <a href="{{ url_for('public.about') }}" style="margin-left: 4px;">How APR works</a>
   </footer>
 </div>
 
