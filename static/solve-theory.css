@@ -30,17 +30,31 @@
 }
 
 /* Region color palette — one per region, distinct enough on warm cream
-   that adjacent stripes are obviously different.  N=10 max. */
-.theory-region-0  { background: #d99a3d; }
-.theory-region-1  { background: #c2553f; }
-.theory-region-2  { background: #6a8f4a; }
-.theory-region-3  { background: #4a7aa3; }
-.theory-region-4  { background: #8d5fa6; }
-.theory-region-5  { background: #d97a55; }
-.theory-region-6  { background: #4f8a6e; }
-.theory-region-7  { background: #b06b41; }
-.theory-region-8  { background: #6a64a8; }
-.theory-region-9  { background: #97883d; }
+   that adjacent stripes are obviously different.  N=10 max.
+   .theory-cell.theory-region-N (specificity 0,2,0) so the cell rule's
+   bg-2 default never wins the cascade against a painted region. */
+.theory-cell.theory-region-0  { background: #d99a3d; }
+.theory-cell.theory-region-1  { background: #c2553f; }
+.theory-cell.theory-region-2  { background: #6a8f4a; }
+.theory-cell.theory-region-3  { background: #4a7aa3; }
+.theory-cell.theory-region-4  { background: #8d5fa6; }
+.theory-cell.theory-region-5  { background: #d97a55; }
+.theory-cell.theory-region-6  { background: #4f8a6e; }
+.theory-cell.theory-region-7  { background: #b06b41; }
+.theory-cell.theory-region-8  { background: #6a64a8; }
+.theory-cell.theory-region-9  { background: #97883d; }
+/* Tool-button swatches still use the bare class — they're not nested in
+   .theory-cell, so specificity isn't an issue and we want the same color. */
+.theory-tool .swatch.theory-region-0  { background: #d99a3d; }
+.theory-tool .swatch.theory-region-1  { background: #c2553f; }
+.theory-tool .swatch.theory-region-2  { background: #6a8f4a; }
+.theory-tool .swatch.theory-region-3  { background: #4a7aa3; }
+.theory-tool .swatch.theory-region-4  { background: #8d5fa6; }
+.theory-tool .swatch.theory-region-5  { background: #d97a55; }
+.theory-tool .swatch.theory-region-6  { background: #4f8a6e; }
+.theory-tool .swatch.theory-region-7  { background: #b06b41; }
+.theory-tool .swatch.theory-region-8  { background: #6a64a8; }
+.theory-tool .swatch.theory-region-9  { background: #97883d; }
 
 .theory-grid-wrap { overflow-x: auto; padding: 4px; }
 .theory-grid {
@@ -78,13 +92,14 @@
 .theory-cell.frame-bottom { border-bottom: 2px solid var(--ink); }
 
 /* Unpainted sentinel — the first user starts here on every cell, so a
-   tap with a region tool gives clear visible feedback. */
+   tap with a region tool gives clear visible feedback.  Specificity 0,2,0
+   matches the painted-region rules so source order isn't load-bearing. */
 .theory-cell.theory-region-unpainted {
   background:
     repeating-linear-gradient(
       45deg,
       var(--bg-2) 0 6px,
-      color-mix(in oklab, var(--ink) 6%, var(--bg-2)) 6px 12px
+      color-mix(in oklab, var(--ink) 8%, var(--bg-2)) 6px 12px
     );
 }
 .theory-cell.has-star::before {

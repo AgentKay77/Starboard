@@ -101,6 +101,37 @@ def test_validate_board_rejects_wrong_star_count():
         theories.validate_board(regions, stars[:-1], size)
 
 
+def test_validate_board_accepts_irregular_region_sizes():
+    """Regions can have unequal cell counts — Stars puzzles ship that way.
+    The only requirement is that each region holds two non-touching stars."""
+    size, regions, stars = _valid_8x8()
+    # Reshape: move two cells from region 0's row into region 1's territory,
+    # so region 0 has 6 cells and region 1 has 10. Star placement still
+    # respects the two-per-row/col/region invariants.
+    regions = [row[:] for row in regions]
+    regions[0][6] = 1
+    regions[0][7] = 1
+    out_regions, _ = theories.validate_board(regions, stars, size)
+    assert sum(row.count(0) for row in out_regions) == 6
+    assert sum(row.count(1) for row in out_regions) == 10
+
+
+def test_validate_board_rejects_region_with_one_cell():
+    """A region with a single cell can't fit two stars."""
+    size, regions, stars = _valid_8x8()
+    regions = [row[:] for row in regions]
+    # Steal one of region 0's cells for region 0 -> region 7,
+    # leaving region 0 with 7 cells (still valid), then collapse region 0's
+    # remaining cells one by one to trigger the "needs ≥ 2" branch.
+    # Easiest: rewrite so region 0 has just one cell.
+    for r in range(size):
+        for c in range(size):
+            if regions[r][c] == 0 and not (r == 0 and c == 0):
+                regions[r][c] = 1
+    with pytest.raises(theories.TheoryError, match="needs at least 2"):
+        theories.validate_board(regions, stars, size)
+
+
 def test_parse_pick_order_accepts_partial():
     board_stars = [(0, 0), (1, 1), (2, 2), (3, 3)]
     raw = json.dumps([[0, 0], [2, 2]])

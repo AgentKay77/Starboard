@@ -131,12 +131,16 @@
         btn.className = 'theory-tool';
         btn.dataset.kind = `paint:${i}`;
         const ct = countCellsInRegion(i);
-        const ok = ct === size;
-        // Show "R3 4/10" so it's obvious which regions still need cells.
+        // Region cell counts can vary in the real puzzle — just show
+        // current size; ≥ 2 cells is the only hard requirement so the
+        // region can fit two non-touching stars.
         btn.innerHTML =
           `<span class="swatch theory-region-${i}"></span>` +
-          `R${i + 1} <span class="ct" style="opacity: 0.7; font-size: 11px; margin-left: 2px;">${ct}/${size}</span>`;
-        if (ok) btn.dataset.full = '1';
+          `R${i + 1}` +
+          (ct > 0
+            ? ` <span class="ct" style="opacity: 0.7; font-size: 11px; margin-left: 2px;">${ct}</span>`
+            : '');
+        if (ct >= 2) btn.dataset.full = '1';
         if (tool === `paint:${i}`) btn.dataset.active = '1';
         btn.addEventListener('click', () => { tool = `paint:${i}`; render(); });
         tools.appendChild(btn);
@@ -281,8 +285,8 @@
       const regionIdx = parseInt(tool.split(':')[1], 10);
       const ownCount = countCellsInRegion(regionIdx);
       hint.textContent =
-        `Painting region ${regionIdx + 1} (${ownCount}/${size} cells). ` +
-        `${unpaintedCount} cell(s) unpainted. Drag to fill.`;
+        `Painting region ${regionIdx + 1} (${ownCount} cell${ownCount === 1 ? '' : 's'}). ` +
+        `${unpaintedCount} cell(s) unpainted. Drag to fill — region size can vary.`;
     } else if (tool === 'star') {
       hint.textContent = `Place ${2 * size} stars total. Tap to toggle. Currently placed: ${stars.length}.`;
     } else if (tool === 'pick') {
@@ -321,30 +325,31 @@
           );
           return;
         }
-        // Catch the "you painted 9 of 10 regions" mistake before the
-        // server rejects it: every region 0..size-1 must show up.
+        // Every region 0..size-1 must be used at least twice (a region
+        // with one cell can't hold two non-touching stars). Cell counts
+        // can otherwise vary — Stars puzzles ship with irregular regions.
         const tally = new Array(size).fill(0);
         for (let r = 0; r < size; r++)
           for (let c = 0; c < size; c++) tally[regions[r][c]]++;
         const missing = [];
-        const wrongCount = [];
+        const tooSmall = [];
         for (let i = 0; i < size; i++) {
           if (tally[i] === 0) missing.push(`R${i + 1}`);
-          else if (tally[i] !== size) wrongCount.push(`R${i + 1} has ${tally[i]} (need ${size})`);
+          else if (tally[i] < 2) tooSmall.push(`R${i + 1} has ${tally[i]} cell`);
         }
         if (missing.length) {
           e.preventDefault();
           alert(
             `Solve theory: every region must be painted. Missing: ${missing.join(', ')}. ` +
-            `Pick the missing color and paint exactly ${size} cells with it.`
+            `Pick that color and paint at least 2 cells with it.`
           );
           return;
         }
-        if (wrongCount.length) {
+        if (tooSmall.length) {
           e.preventDefault();
           alert(
-            `Solve theory: each region must hold exactly ${size} cells. ` +
-            `Off: ${wrongCount.join('; ')}.`
+            `Solve theory: each region needs at least 2 cells (to fit two non-touching stars). ` +
+            `Too small: ${tooSmall.join('; ')}.`
           );
           return;
         }

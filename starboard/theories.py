@@ -53,7 +53,10 @@ def validate_board(
                     f"regions[{r}][{c}] = {val!r}, must be int in [0,{size})"
                 )
 
-    # Each region has exactly `size` cells.
+    # Every region 0..size-1 must be used. Cell counts can vary — Stars
+    # puzzles ship with irregular regions, the only requirement is that
+    # each region holds exactly two stars (enforced below). A region needs
+    # at least 2 cells to fit those two non-touching stars.
     counts: dict[int, int] = {}
     for row in regions:
         for v in row:
@@ -64,12 +67,13 @@ def validate_board(
             f"got {sorted(counts.keys())}"
         )
     for rid in range(size):
-        if counts[rid] != size:
+        if counts[rid] < 2:
             raise TheoryError(
-                f"region {rid} has {counts[rid]} cells, expected {size}"
+                f"region {rid} has {counts[rid]} cell(s); "
+                "needs at least 2 to fit two non-touching stars"
             )
 
-    # 4-connectivity per region.
+    # 4-connectivity per region (each region is one contiguous blob).
     for rid in range(size):
         cells = [
             (r, c) for r in range(size) for c in range(size) if regions[r][c] == rid
@@ -86,7 +90,7 @@ def validate_board(
                 ):
                     seen.add((nr, nc))
                     q.append((nr, nc))
-        if len(seen) != size:
+        if len(seen) != counts[rid]:
             raise TheoryError(f"region {rid} is not 4-connected")
 
     # Stars: list of (r,c), distinct, exactly 2*size, in bounds.
