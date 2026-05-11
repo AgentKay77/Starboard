@@ -95,10 +95,22 @@ def test_validate_board_rejects_touching_stars():
         theories.validate_board(regions, bad_stars[:14], size)
 
 
-def test_validate_board_rejects_wrong_star_count():
+def test_validate_board_accepts_partial_stars():
+    """Partial placements are intentionally allowed — players don't need
+    to mark every star to log a solve theory."""
     size, regions, stars = _valid_8x8()
-    with pytest.raises(theories.TheoryError):
-        theories.validate_board(regions, stars[:-1], size)
+    out_regions, out_stars = theories.validate_board(regions, stars[:5], size)
+    assert len(out_stars) == 5
+
+
+def test_validate_board_rejects_too_many_stars():
+    """Over-placement (more than 2*size) is flatly invalid. The count
+    check fires before the no-touching check, so we can hand the
+    validator 17 distinct cells without arranging them carefully."""
+    size, regions, _ = _valid_8x8()
+    too_many = [(r, c) for r in range(size) for c in range(size)][: 2 * size + 1]
+    with pytest.raises(theories.TheoryError, match="too many"):
+        theories.validate_board(regions, too_many, size)
 
 
 def test_validate_board_accepts_irregular_region_sizes():

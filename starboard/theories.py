@@ -93,7 +93,12 @@ def validate_board(
         if len(seen) != counts[rid]:
             raise TheoryError(f"region {rid} is not 4-connected")
 
-    # Stars: list of (r,c), distinct, exactly 2*size, in bounds.
+    # Stars: list of (r,c), distinct, in bounds. Count is flexible so a
+    # user submitting a partial solve theory ("here are the stars I'm
+    # confident about") isn't forced to commit to a full 2N placement.
+    # The hard puzzle invariants — no touching, at-most-2 per row / column
+    # / region — are still enforced so a malformed theory can't poison the
+    # canonical board.
     star_set: set[tuple[int, int]] = set()
     for s in stars:
         if (
@@ -107,12 +112,13 @@ def validate_board(
         if (r, c) in star_set:
             raise TheoryError(f"duplicate star at ({r},{c})")
         star_set.add((r, c))
-    if len(star_set) != 2 * size:
+    if len(star_set) > 2 * size:
         raise TheoryError(
-            f"need exactly {2 * size} stars, got {len(star_set)}"
+            f"too many stars: {len(star_set)} (max {2 * size})"
         )
 
-    # 8-neighbour non-adjacency.
+    # 8-neighbour non-adjacency — always enforced; touching stars violate
+    # the puzzle rules whether the placement is complete or not.
     for r, c in star_set:
         for dr in (-1, 0, 1):
             for dc in (-1, 0, 1):
@@ -123,7 +129,8 @@ def validate_board(
                         f"stars touch at ({r},{c}) and ({r+dr},{c+dc})"
                     )
 
-    # Two stars per row, column, region.
+    # At most two stars per row / column / region. Partial placements can
+    # have fewer; over-placements are flatly invalid.
     rows = [0] * size
     cols = [0] * size
     regs = [0] * size
@@ -132,14 +139,14 @@ def validate_board(
         cols[c] += 1
         regs[regions[r][c]] += 1
     for i, n in enumerate(rows):
-        if n != 2:
-            raise TheoryError(f"row {i} has {n} stars, expected 2")
+        if n > 2:
+            raise TheoryError(f"row {i} has {n} stars (max 2)")
     for i, n in enumerate(cols):
-        if n != 2:
-            raise TheoryError(f"column {i} has {n} stars, expected 2")
+        if n > 2:
+            raise TheoryError(f"column {i} has {n} stars (max 2)")
     for i, n in enumerate(regs):
-        if n != 2:
-            raise TheoryError(f"region {i} has {n} stars, expected 2")
+        if n > 2:
+            raise TheoryError(f"region {i} has {n} stars (max 2)")
 
     return regions, sorted(star_set)
 

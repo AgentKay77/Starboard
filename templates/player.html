@@ -5,10 +5,11 @@
 
 {% from "_glyphs.html" import trophy, sparkline, delta %}
 
-{% set TROPHY_KEYS = ['champion', 'iron_man', 'lightning', 'steady', 'giant_slayer'] %}
+{% set TROPHY_KEYS = ['champion', 'iron_man', 'lightning', 'steady', 'giant_slayer', 'weekend_warrior'] %}
 {% set TROPHY_LABELS = {
   'champion': 'Champion', 'iron_man': 'Iron Man', 'lightning': 'Lightning',
-  'steady': 'Steady', 'giant_slayer': 'Giant Slayer'
+  'steady': 'Steady', 'giant_slayer': 'Giant Slayer',
+  'weekend_warrior': 'Weekend Warrior',
 } %}
 {% set total_players = profile.h2h_top5|length + 1 %}
 
@@ -259,6 +260,7 @@
                 {%- elif s.kind == 'dnf' and s.assisted %}DNF · hints
                 {%- else %}{{ s.kind }}{% endif %}
               </span>
+              {% if s.is_weekend %}<span class="smallcaps" style="margin-left: 6px; color: var(--accent-3);" title="Weekend day — doesn't affect rating">weekend</span>{% endif %}
             </td>
             <td class="ralign num">
               {% if s.kind == 'completed' %}{{ s.time_str }}

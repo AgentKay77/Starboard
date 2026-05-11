@@ -5,10 +5,11 @@
 
 {% from "_glyphs.html" import trophy %}
 
-{% set TROPHY_KEYS = ['champion', 'iron_man', 'lightning', 'steady', 'giant_slayer'] %}
+{% set TROPHY_KEYS = ['champion', 'iron_man', 'lightning', 'steady', 'giant_slayer', 'weekend_warrior'] %}
 {% set TROPHY_LABELS = {
   'champion': 'Champion', 'iron_man': 'Iron Man', 'lightning': 'Lightning',
-  'steady': 'Steady', 'giant_slayer': 'Giant Slayer'
+  'steady': 'Steady', 'giant_slayer': 'Giant Slayer',
+  'weekend_warrior': 'Weekend Warrior',
 } %}
 
 <header class="page-h">
@@ -51,12 +52,14 @@
           <div class="num fs-16 muted">
             {% if kind == 'iron_man' %}{{ a.metric_value|int }} d
             {% elif kind == 'giant_slayer' %}+{{ a.metric_value|round|int }}
+            {% elif kind == 'weekend_warrior' %}{{ a.metric_value|int }} wins
             {% else %}{{ '%.2f'|format(a.metric_value) }}σ{% endif %}
           </div>
         {% else %}
           <div class="serif-it muted-2" style="margin-top: 16px;">
             {% if kind == 'steady' %}needs ≥ 3 days
             {% elif kind == 'giant_slayer' %}no upset ≥ 200
+            {% elif kind == 'weekend_warrior' %}no weekend submissions yet
             {% elif kind == 'champion' %}≥ 4 days needed
             {% else %}open{% endif %}
           </div>
@@ -101,6 +104,7 @@
                   <div class="num muted" style="font-size: 11px; margin-top: 2px;">
                     {% if k == 'iron_man' %}{{ a.metric_value|int }} d
                     {% elif k == 'giant_slayer' %}+{{ a.metric_value|round|int }}
+                    {% elif k == 'weekend_warrior' %}{{ a.metric_value|int }} wins
                     {% else %}{{ '%.2f'|format(a.metric_value) }}σ{% endif %}
                   </div>
                 {% else %}

@@ -288,7 +288,9 @@
         `Painting region ${regionIdx + 1} (${ownCount} cell${ownCount === 1 ? '' : 's'}). ` +
         `${unpaintedCount} cell(s) unpainted. Drag to fill — region size can vary.`;
     } else if (tool === 'star') {
-      hint.textContent = `Place ${2 * size} stars total. Tap to toggle. Currently placed: ${stars.length}.`;
+      hint.textContent =
+        `Place up to ${2 * size} stars (no two touching). Tap to toggle. ` +
+        `Currently placed: ${stars.length}. Partial placements are fine — only mark stars you're confident about.`;
     } else if (tool === 'pick') {
       hint.textContent = `Tap stars in pick order. ${pickOrder.length}/${stars.length} marked.`;
     } else {
@@ -353,14 +355,16 @@
           );
           return;
         }
-        if (stars.length !== 2 * size) {
+        if (stars.length > 2 * size) {
           e.preventDefault();
           alert(
-            `Solve theory: place exactly ${2 * size} stars (currently ${stars.length}). ` +
-            `Use the ★ Star tool, or untick "Solve Theory" to skip.`
+            `Solve theory: too many stars (${stars.length}). The puzzle has ` +
+            `at most ${2 * size}. Remove some with the ★ Star tool.`
           );
           return;
         }
+        // Partial placements are fine — Hunter wants players to log what
+        // they actually spotted, not be forced into a full 2N grid.
       }
       regionsField.value = JSON.stringify(regions);
       const sortedStars = stars.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);

@@ -249,22 +249,34 @@ def player_profile(conn: sqlite3.Connection, player_id: int) -> dict | None:
         trophy_case.append(dict(a))
 
     # Recent activity: pull from rating_history (covers completed/dnf/absent)
+    # Pull from puzzle_days primarily so weekend days (where APR is skipped
+    # and rating_history has no row) still surface a player's submission.
     recent_activity_rows = conn.execute(
-        """SELECT pd.date, pd.id AS day_id, rh.kind, rh.actual_z, rh.delta,
-                  s.time_seconds, s.submitted_at, s.assisted
-           FROM rating_history rh
-           JOIN puzzle_days pd ON pd.id = rh.day_id
+        """SELECT pd.date, pd.id AS day_id,
+                  rh.kind AS rh_kind, rh.actual_z, rh.delta,
+                  s.id   AS sub_id, s.status, s.time_seconds,
+                  s.submitted_at, s.assisted
+           FROM puzzle_days pd
+           LEFT JOIN rating_history rh
+               ON rh.day_id = pd.id AND rh.player_id = ?
            LEFT JOIN submissions s
-               ON s.player_id = rh.player_id AND s.day_id = rh.day_id
-           WHERE rh.player_id = ?
+               ON s.day_id  = pd.id AND s.player_id = ?
+           WHERE rh.id IS NOT NULL OR s.id IS NOT NULL
            ORDER BY pd.date DESC
            LIMIT 14""",
-        (player_id,),
+        (player_id, player_id),
     ).fetchall()
+    from starboard.clock import is_weekend_date
+
     recent = []
     for r in recent_activity_rows:
+        # Weekend days have no rating_history row; fall back to the
+        # submission's status. Non-submission weekend days are filtered
+        # out by the WHERE clause above.
+        kind = r["rh_kind"] or r["status"] or "absent"
+        is_weekend = is_weekend_date(r["date"])
         rank_that_day = None
-        if r["kind"] == "completed" and r["time_seconds"] is not None:
+        if kind == "completed" and r["time_seconds"] is not None:
             rank_that_day = conn.execute(
                 """SELECT COUNT(*) + 1 FROM submissions s2
                    WHERE s2.day_id = ? AND s2.status = 'completed'
@@ -275,8 +287,9 @@ def player_profile(conn: sqlite3.Connection, player_id: int) -> dict | None:
         recent.append(
             {
                 "date": r["date"],
-                "kind": r["kind"],
+                "kind": kind,
                 "assisted": assisted,
+                "is_weekend": is_weekend,
                 "time_seconds": r["time_seconds"],
                 "time_str": format_time(r["time_seconds"]) if r["time_seconds"] else "—",
                 "z": r["actual_z"],
@@ -535,11 +548,12 @@ def weekly_history(conn: sqlite3.Connection) -> list[dict]:
 def career_trophies(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute(
         """SELECT p.id, p.name, p.display_name,
-                  SUM(CASE WHEN wa.award='champion' THEN 1 ELSE 0 END) AS champion,
-                  SUM(CASE WHEN wa.award='iron_man' THEN 1 ELSE 0 END) AS iron_man,
-                  SUM(CASE WHEN wa.award='lightning' THEN 1 ELSE 0 END) AS lightning,
-                  SUM(CASE WHEN wa.award='steady' THEN 1 ELSE 0 END) AS steady,
-                  SUM(CASE WHEN wa.award='giant_slayer' THEN 1 ELSE 0 END) AS giant_slayer,
+                  SUM(CASE WHEN wa.award='champion'        THEN 1 ELSE 0 END) AS champion,
+                  SUM(CASE WHEN wa.award='iron_man'        THEN 1 ELSE 0 END) AS iron_man,
+                  SUM(CASE WHEN wa.award='lightning'       THEN 1 ELSE 0 END) AS lightning,
+                  SUM(CASE WHEN wa.award='steady'          THEN 1 ELSE 0 END) AS steady,
+                  SUM(CASE WHEN wa.award='giant_slayer'    THEN 1 ELSE 0 END) AS giant_slayer,
+                  SUM(CASE WHEN wa.award='weekend_warrior' THEN 1 ELSE 0 END) AS weekend_warrior,
                   COUNT(wa.id) AS total
            FROM players p
            LEFT JOIN weekly_awards wa ON wa.player_id = p.id

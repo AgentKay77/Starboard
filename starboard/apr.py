@@ -169,6 +169,11 @@ def recompute_all_ratings(conn: sqlite3.Connection) -> None:
 
     current: dict[int, float] = {}
     for day_id, date_str in days:
+        # Friday/Saturday/Sunday don't affect APR. Players can still submit
+        # — those entries count for H2H and Weekend Warrior — but no rating
+        # change is applied, so absences over the weekend are also free.
+        if clock.is_weekend_date(date_str):
+            continue
         completed_rows = cur.execute(
             """SELECT player_id, time_seconds FROM submissions
                WHERE day_id = ? AND status = 'completed'""",

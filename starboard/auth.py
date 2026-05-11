@@ -161,6 +161,39 @@ def account():
                     )
                     conn.commit()
                     flash("Player claimed.", "success")
+        elif action == "rename":
+            new_username = (request.form.get("username") or "").strip()
+            new_display = (request.form.get("display_name") or "").strip()
+            if not (2 <= len(new_username) <= 40):
+                flash("Username must be 2–40 characters.", "error")
+            elif new_username != current_user.username and conn.execute(
+                "SELECT id FROM users WHERE username = ? AND id != ?",
+                (new_username, current_user.id),
+            ).fetchone():
+                flash("That username is already taken.", "error")
+            elif new_display and len(new_display) > 40:
+                flash("Display name must be 40 characters or fewer.", "error")
+            else:
+                conn.execute(
+                    "UPDATE users SET username = ? WHERE id = ?",
+                    (new_username, current_user.id),
+                )
+                # Update the claimed player's display_name in the same
+                # transaction so the standings and leaderboards refresh
+                # without a separate manual action.
+                if current_user.player_id and new_display:
+                    conn.execute(
+                        "UPDATE players SET display_name = ? WHERE id = ?",
+                        (new_display, current_user.player_id),
+                    )
+                elif current_user.player_id and not new_display:
+                    # Empty string → clear override, fall back to canonical name.
+                    conn.execute(
+                        "UPDATE players SET display_name = NULL WHERE id = ?",
+                        (current_user.player_id,),
+                    )
+                conn.commit()
+                flash("Profile updated.", "success")
         elif action == "change_password":
             current_pw = request.form.get("current_password") or ""
             new_pw = request.form.get("new_password") or ""

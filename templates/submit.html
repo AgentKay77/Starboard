@@ -40,9 +40,11 @@
 
     <div class="field" id="time-field">
       <label for="time">Time</label>
-      <input id="time" type="text" name="time" inputmode="numeric" pattern="[0-9:.]+"
-             placeholder="1:42 or 102" class="num" />
-      <span class="hint">Use <code>m:ss</code> or raw seconds. Decimal seconds work too.</span>
+      {# inputmode left off so the mobile keyboard still surfaces ":". The
+         pattern attribute keeps the validation. #}
+      <input id="time" type="text" name="time" pattern="[0-9:.]+"
+             placeholder="1:42 or 102" class="num" autocomplete="off" />
+      <span class="hint">Use <code>m:ss</code> or raw seconds. Decimal seconds work too. Times worse than ~2σ from the field mean are clamped to the DNF floor for rating purposes — log honestly.</span>
     </div>
 
     {# Honor pledge — only meaningful for completed solves. JS hides this

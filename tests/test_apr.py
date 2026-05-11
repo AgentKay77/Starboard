@@ -208,9 +208,9 @@ def test_dnf_equals_clamped_completion_for_same_player():
 
 def test_recompute_replays_days_in_date_order(seeded_conn):
     conn = seeded_conn
-    d2 = insert_day(conn, "2026-01-12")
-    d0 = insert_day(conn, "2026-01-10")
-    d1 = insert_day(conn, "2026-01-11")
+    d2 = insert_day(conn, "2026-01-07")
+    d0 = insert_day(conn, "2026-01-05")
+    d1 = insert_day(conn, "2026-01-06")
     for day_id in (d0, d1, d2):
         insert_submission(conn, 1, day_id, 50.0)
         insert_submission(conn, 2, day_id, 60.0)
@@ -224,7 +224,7 @@ def test_recompute_replays_days_in_date_order(seeded_conn):
            WHERE rh.player_id = 1 ORDER BY pd.date"""
     ).fetchall()
     dates = [r["date"] for r in rows]
-    assert dates == ["2026-01-10", "2026-01-11", "2026-01-12"]
+    assert dates == ["2026-01-05", "2026-01-06", "2026-01-07"]
     assert all(r["kind"] == "completed" for r in rows)
 
 
@@ -232,7 +232,7 @@ def test_absent_player_gets_negative_delta(seeded_conn):
     """Replaces the old 'attendance does not affect rating' test — under
     the new design, absentees DO take a hit."""
     conn = seeded_conn
-    d = insert_day(conn, "2026-01-10")
+    d = insert_day(conn, "2026-01-05")
     insert_submission(conn, 1, d, 50.0)
     insert_submission(conn, 2, d, 60.0)
     # Player 3 is absent.
@@ -249,7 +249,7 @@ def test_absent_player_gets_negative_delta(seeded_conn):
 
 def test_recompute_is_idempotent(seeded_conn):
     conn = seeded_conn
-    d = insert_day(conn, "2026-01-10")
+    d = insert_day(conn, "2026-01-05")
     insert_submission(conn, 1, d, 50.0)
     insert_submission(conn, 2, d, 60.0)
     insert_submission(conn, 3, d, 70.0)
@@ -271,8 +271,8 @@ def test_recompute_is_idempotent(seeded_conn):
 
 def test_get_current_ratings_returns_latest(seeded_conn):
     conn = seeded_conn
-    d1 = insert_day(conn, "2026-01-10")
-    d2 = insert_day(conn, "2026-01-11")
+    d1 = insert_day(conn, "2026-01-05")
+    d2 = insert_day(conn, "2026-01-06")
     for d in (d1, d2):
         insert_submission(conn, 1, d, 50.0)
         insert_submission(conn, 2, d, 60.0)
@@ -286,7 +286,7 @@ def test_get_current_ratings_returns_latest(seeded_conn):
 def test_solo_day_skipped_no_one_penalized(seeded_conn):
     """1 completer + 12 absentees: signal-floor; no rating updates at all."""
     conn = seeded_conn
-    d = insert_day(conn, "2026-01-10")
+    d = insert_day(conn, "2026-01-05")
     insert_submission(conn, 1, d, 50.0)
     # Players 2 and 3 absent.
     recompute_all_ratings(conn)
@@ -299,7 +299,7 @@ def test_solo_day_skipped_no_one_penalized(seeded_conn):
 
 def test_dnf_recompute_writes_dnf_row(seeded_conn):
     conn = seeded_conn
-    d = insert_day(conn, "2026-01-10")
+    d = insert_day(conn, "2026-01-05")
     insert_submission(conn, 1, d, 50.0)
     insert_submission(conn, 2, d, 60.0)
     insert_submission(conn, 3, d, None, status="dnf")
@@ -316,7 +316,7 @@ def test_dnf_recompute_writes_dnf_row(seeded_conn):
 def test_inactive_player_not_penalized(seeded_conn):
     """Marking a player inactive removes their absent rows from history."""
     conn = seeded_conn
-    d = insert_day(conn, "2026-01-10")
+    d = insert_day(conn, "2026-01-05")
     insert_submission(conn, 1, d, 50.0)
     insert_submission(conn, 2, d, 60.0)
     # Player 3 absent. Mark them inactive.

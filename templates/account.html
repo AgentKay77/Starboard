@@ -13,6 +13,28 @@
   </header>
 
   <section class="card">
+    <div class="sec-h"><h2>Profile</h2></div>
+    <form method="post" class="stack stack-12">
+      <input type="hidden" name="action" value="rename" />
+      <div class="field">
+        <label for="username">Username</label>
+        <input id="username" type="text" name="username" minlength="2" maxlength="40"
+               value="{{ current_user.username }}" required autocomplete="off" />
+        <span class="hint">Used to sign in and shown next to the &laquo;Submit time&raquo; button.</span>
+      </div>
+      <div class="field">
+        <label for="display_name">Display name on the standings</label>
+        <input id="display_name" type="text" name="display_name" maxlength="40"
+               value="{{ claimed_player.display_name if claimed_player else '' }}"
+               placeholder="{{ claimed_player.name if claimed_player else 'Claim a player first' }}"
+               {% if not claimed_player %}disabled{% endif %} />
+        <span class="hint">Empty falls back to the canonical roster name ({% if claimed_player %}{{ claimed_player.name }}{% else %}—{% endif %}).</span>
+      </div>
+      <button type="submit" class="btn lg block">Save profile</button>
+    </form>
+  </section>
+
+  <section class="card">
     <div class="sec-h"><h2>Player</h2></div>
     {% if claimed_player %}
       <div class="row between" style="padding-bottom: 12px;">

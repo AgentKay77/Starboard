@@ -212,17 +212,19 @@ def test_giant_slayer_no_upset_when_higher_rated_wins():
 
 
 def test_giant_slayer_tiebreak_more_recent_date():
-    """Two equal-gap upsets on different days → most recent wins."""
+    """Two equal-gap upsets on different days → most recent weekday wins.
+    (Fri-Sun are excluded from giant-slayer eligibility under the
+    weekend-rating-skip rule introduced for Weekend Warrior.)"""
     subs = {
-        "2026-01-05": [(1, 50.0), (2, 60.0)],  # earlier
-        "2026-01-09": [(3, 50.0), (4, 60.0)],  # later
+        "2026-01-05": [(1, 50.0), (2, 60.0)],  # Monday
+        "2026-01-08": [(3, 50.0), (4, 60.0)],  # Thursday — most recent weekday
     }
     ratings = {1: 1300, 2: 1700, 3: 1300, 4: 1700}  # both gaps = 400
     awards = compute_weekly_awards(WEEK_START, WEEK_END, subs, ratings)
     gs = _award(awards, GIANT_SLAYER)
     assert gs is not None
     detail = json.loads(gs["metric_detail"])
-    assert detail["date"] == "2026-01-09"
+    assert detail["date"] == "2026-01-08"
 
 
 def test_unknown_player_defaults_to_initial_rating():

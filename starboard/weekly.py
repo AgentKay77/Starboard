@@ -32,8 +32,11 @@ IRON_MAN = "iron_man"
 LIGHTNING = "lightning"
 STEADY = "steady"
 GIANT_SLAYER = "giant_slayer"
+WEEKEND_WARRIOR = "weekend_warrior"
 
-ALL_AWARDS = (CHAMPION, IRON_MAN, LIGHTNING, STEADY, GIANT_SLAYER)
+ALL_AWARDS = (
+    CHAMPION, IRON_MAN, LIGHTNING, STEADY, GIANT_SLAYER, WEEKEND_WARRIOR,
+)
 
 GIANT_SLAYER_MIN_GAP = 200.0
 CHAMPION_MIN_DAYS = 4
@@ -70,14 +73,27 @@ def compute_weekly_awards(
     submissions_by_day: dict[str, list[tuple[int, float | None]]],
     apr_ratings_at_week_start: dict[int, float],
 ) -> list[dict]:
-    """Return up to 5 award dicts for the week."""
-    z_by_day = _z_scores_per_day(submissions_by_day)
+    """Return up to 6 award dicts for the week.
+
+    Weekday (Mon-Thu) submissions feed Champion / Iron Man / Lightning /
+    Steady / Giant Slayer — the rating-adjacent awards. Friday-Sunday
+    submissions feed only the Weekend Warrior trophy."""
+    from starboard.clock import is_weekend_date
+
+    weekday_subs = {
+        d: subs for d, subs in submissions_by_day.items() if not is_weekend_date(d)
+    }
+    weekend_subs = {
+        d: subs for d, subs in submissions_by_day.items() if is_weekend_date(d)
+    }
+
+    z_by_day = _z_scores_per_day(weekday_subs)
 
     days_played: dict[int, int] = defaultdict(int)
     submissions_count: dict[int, int] = defaultdict(int)
     player_zs: dict[int, list[tuple[str, float]]] = defaultdict(list)
 
-    for day, subs in submissions_by_day.items():
+    for day, subs in weekday_subs.items():
         for pid, _t in subs:
             submissions_count[pid] += 1
             days_played[pid] += 1
@@ -89,8 +105,43 @@ def compute_weekly_awards(
     awards.extend(_iron_man(submissions_count, player_zs))
     awards.extend(_lightning(player_zs))
     awards.extend(_steady(player_zs, days_played))
-    awards.extend(_giant_slayer(submissions_by_day, apr_ratings_at_week_start))
+    awards.extend(_giant_slayer(weekday_subs, apr_ratings_at_week_start))
+    awards.extend(_weekend_warrior(weekend_subs))
     return awards
+
+
+def _weekend_warrior(weekend_subs) -> list[dict]:
+    """Most days won across Fri/Sat/Sun. Tiebreak: most weekend submissions.
+
+    Wins = days where the player had the fastest completed time among that
+    day's completed submitters. A day with zero completions yields no win
+    for anyone (but still counts toward submissions for engagement)."""
+    wins: dict[int, int] = defaultdict(int)
+    subs_count: dict[int, int] = defaultdict(int)
+    for day, day_subs in weekend_subs.items():
+        for pid, _t in day_subs:
+            subs_count[pid] += 1
+        completed = [(pid, t) for pid, t in day_subs if t is not None]
+        if completed:
+            winner_pid = min(completed, key=lambda s: s[1])[0]
+            wins[winner_pid] += 1
+
+    pids = set(wins) | set(subs_count)
+    if not pids:
+        return []
+    cands = [(pid, wins.get(pid, 0), subs_count.get(pid, 0)) for pid in pids]
+    cands.sort(key=lambda c: (-c[1], -c[2], c[0]))
+    pid, w, s = cands[0]
+    if w == 0 and s == 0:
+        return []
+    return [
+        {
+            "award": WEEKEND_WARRIOR,
+            "player_id": pid,
+            "metric_value": float(w),
+            "metric_detail": json.dumps({"wins": w, "submissions": s}),
+        }
+    ]
 
 
 def _champion(player_zs, days_played) -> list[dict]:
