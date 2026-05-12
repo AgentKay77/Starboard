@@ -276,14 +276,14 @@ def week_bounds(week_start: str) -> tuple[str, str]:
 
 
 def _load_submissions_for_week(
-    conn: sqlite3.Connection, week_start: str, week_end: str
+    conn: sqlite3.Connection, week_start: str, week_end: str, season_id: int
 ) -> dict[str, list[tuple[int, float | None]]]:
     rows = conn.execute(
         """SELECT pd.date, s.player_id, s.time_seconds, s.status
            FROM submissions s
            JOIN puzzle_days pd ON pd.id = s.day_id
-           WHERE pd.date BETWEEN ? AND ?""",
-        (week_start, week_end),
+           WHERE pd.date BETWEEN ? AND ? AND pd.season_id = ?""",
+        (week_start, week_end, season_id),
     ).fetchall()
     out: dict[str, list[tuple[int, float | None]]] = defaultdict(list)
     for d, pid, t, status in rows:
@@ -293,8 +293,11 @@ def _load_submissions_for_week(
 
 
 def close_week_and_lock_awards(conn: sqlite3.Connection, week_start: str) -> None:
+    from starboard import seasons
+
+    sid = seasons.get_current_id(conn)
     _, week_end = week_bounds(week_start)
-    submissions = _load_submissions_for_week(conn, week_start, week_end)
+    submissions = _load_submissions_for_week(conn, week_start, week_end, sid)
     apr_ratings = get_ratings_as_of(conn, week_start)
     awards = compute_weekly_awards(week_start, week_end, submissions, apr_ratings)
 
@@ -304,8 +307,8 @@ def close_week_and_lock_awards(conn: sqlite3.Connection, week_start: str) -> Non
         cur.execute(
             """INSERT OR IGNORE INTO weekly_awards
                    (week_start, week_end, award, player_id,
-                    metric_value, metric_detail, computed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    metric_value, metric_detail, computed_at, season_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 week_start,
                 week_end,
@@ -314,6 +317,7 @@ def close_week_and_lock_awards(conn: sqlite3.Connection, week_start: str) -> Non
                 a["metric_value"],
                 a["metric_detail"],
                 now,
+                sid,
             ),
         )
     conn.commit()
@@ -326,17 +330,21 @@ def recompute_week(conn: sqlite3.Connection, week_start: str) -> None:
 
 
 def recompute_all_weeks(conn: sqlite3.Connection) -> None:
-    rows = conn.execute("SELECT MIN(date), MAX(date) FROM puzzle_days").fetchone()
+    from starboard import clock, seasons
+
+    sid = seasons.get_current_id(conn)
+    rows = conn.execute(
+        "SELECT MIN(date), MAX(date) FROM puzzle_days WHERE season_id = ?",
+        (sid,),
+    ).fetchone()
     if not rows or rows[0] is None:
         return
     first = date.fromisoformat(rows[0])
     last = date.fromisoformat(rows[1])
-    from starboard import clock
-
     today = clock.local_today()
     open_week_start = today - timedelta(days=today.weekday())
     cur = first - timedelta(days=first.weekday())
-    conn.execute("DELETE FROM weekly_awards")
+    conn.execute("DELETE FROM weekly_awards WHERE season_id = ?", (sid,))
     conn.commit()
     while cur <= last:
         if cur < open_week_start:

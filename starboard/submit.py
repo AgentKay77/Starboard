@@ -22,7 +22,7 @@ from flask import (
 )
 from flask_login import current_user, login_required
 
-from starboard import apr, clock, queries, settings as settings_mod, theories
+from starboard import apr, clock, queries, seasons, settings as settings_mod, theories
 
 submit_bp = Blueprint("submit", __name__)
 
@@ -208,7 +208,8 @@ def _handle_post(conn, today, earliest, _players):
     ).fetchone()
     if not day_row:
         cur = conn.execute(
-            "INSERT INTO puzzle_days (date) VALUES (?)", (the_date.isoformat(),)
+            "INSERT INTO puzzle_days (date, season_id) VALUES (?, ?)",
+            (the_date.isoformat(), seasons.get_current_id(conn)),
         )
         day_id = cur.lastrowid
     else:

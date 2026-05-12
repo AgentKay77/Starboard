@@ -16,7 +16,7 @@ from flask import (
 from flask_login import current_user, login_required
 from markupsafe import Markup
 
-from starboard import apr, clock, pauses, queries, settings as settings_mod, theories as theories_mod, weekly
+from starboard import apr, clock, pauses, queries, seasons, settings as settings_mod, theories as theories_mod, weekly
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -102,6 +102,20 @@ def index():
                 return redirect(url_for("admin.bulk_day", day_date=d))
             except ValueError:
                 flash("Pick a valid date.", "error")
+        elif action == "start_new_season":
+            confirm = request.form.get("confirm") or ""
+            if confirm.strip().upper() != "NEW SEASON":
+                flash(
+                    'Type "NEW SEASON" exactly to confirm — this resets standings.',
+                    "error",
+                )
+            else:
+                new_id = seasons.start_new(conn, user_id=current_user.id)
+                flash(
+                    f"Season opened (id={new_id}). Standings now read empty "
+                    "until the first submission of the new season lands.",
+                    "success",
+                )
         return redirect(url_for("admin.index"))
 
     counts = {
@@ -127,6 +141,8 @@ def index():
         counts=counts,
         user_submissions_enabled=settings_mod.submissions_enabled(conn, env_default),
         today=clock.local_today(current_app.config["WEEK_TIMEZONE"]).isoformat(),
+        current_season=seasons.get_current(conn),
+        all_seasons=seasons.list_all(conn),
     )
 
 
@@ -209,7 +225,8 @@ def days():
             try:
                 date.fromisoformat(d)
                 conn.execute(
-                    "INSERT INTO puzzle_days (date, notes) VALUES (?, ?)", (d, notes)
+                    "INSERT INTO puzzle_days (date, notes, season_id) VALUES (?, ?, ?)",
+                    (d, notes, seasons.get_current_id(conn)),
                 )
                 conn.commit()
                 flash(f"Added {d}.", "success")
@@ -514,7 +531,8 @@ def _get_or_create_day(conn, day_date_iso: str) -> int:
     if row:
         return row["id"]
     cur = conn.execute(
-        "INSERT INTO puzzle_days (date) VALUES (?)", (day_date_iso,)
+        "INSERT INTO puzzle_days (date, season_id) VALUES (?, ?)",
+        (day_date_iso, seasons.get_current_id(conn)),
     )
     conn.commit()
     return cur.lastrowid

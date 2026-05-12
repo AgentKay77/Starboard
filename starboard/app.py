@@ -207,6 +207,50 @@ def records_view():
     return render_template("records.html", records=queries.records(get_db()))
 
 
+@public_bp.route("/seasons")
+def seasons_index():
+    """List all past + current seasons with a small summary card each."""
+    from starboard import seasons as seasons_mod
+
+    conn = get_db()
+    all_seasons = seasons_mod.list_all(conn)
+    current_id = seasons_mod.get_current_id(conn)
+    summaries = []
+    for s in all_seasons:
+        sid = s["id"]
+        days = conn.execute(
+            "SELECT COUNT(*) FROM puzzle_days WHERE season_id = ?", (sid,)
+        ).fetchone()[0]
+        awards = conn.execute(
+            "SELECT COUNT(*) FROM weekly_awards WHERE season_id = ?", (sid,)
+        ).fetchone()[0]
+        summaries.append(
+            {**s, "is_current": sid == current_id, "days": days, "awards": awards}
+        )
+    return render_template("seasons_index.html", seasons=summaries)
+
+
+@public_bp.route("/seasons/<int:season_id>")
+def season_archive(season_id: int):
+    """Read-only final standings + career trophies + records for a past
+    (or current) season."""
+    conn = get_db()
+    row = conn.execute(
+        "SELECT * FROM seasons WHERE id = ?", (season_id,)
+    ).fetchone()
+    if not row:
+        abort(404)
+    return render_template(
+        "season_archive.html",
+        season=dict(row),
+        standings=queries.standings(conn, season_id=season_id),
+        weeks=queries.weekly_history(conn, season_id=season_id),
+        career=queries.career_trophies(conn, season_id=season_id),
+        records=queries.records(conn, season_id=season_id),
+        stats=queries.total_stats(conn, season_id=season_id),
+    )
+
+
 @public_bp.route("/about")
 def about():
     """Public-facing rules + APR explainer."""

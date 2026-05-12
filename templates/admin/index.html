@@ -78,6 +78,34 @@
   </form>
 </section>
 
+<section class="scoreboard p-4 mb-6">
+  <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-3">Seasons</h2>
+  <div class="flex items-baseline justify-between flex-wrap gap-3 mb-3">
+    <div>
+      <div class="font-display text-lg">
+        Current season:
+        <span class="numeral">#{{ current_season.number }}</span>
+        <span class="text-slate-500 text-xs numeral">started {{ current_season.started_at[:10] }}</span>
+      </div>
+      <div class="text-slate-500 text-xs mt-1">
+        Starting a new season archives current standings and resets every player's APR to 1500.
+        Submissions stay in the DB — they just stop counting against the new season.
+      </div>
+    </div>
+    <a href="{{ url_for('public.seasons_index') }}"
+       class="bg-white/10 hover:bg-white/15 px-3 py-2 rounded text-sm">Browse archive</a>
+  </div>
+  <form method="post" class="flex gap-2 flex-wrap">
+    <input type="hidden" name="action" value="start_new_season" />
+    <input type="text" name="confirm" required placeholder='Type "NEW SEASON" to confirm'
+           class="flex-1 bg-navy-800 border border-white/10 rounded px-3 py-2" />
+    <button type="submit"
+            class="bg-accent hover:bg-red-700 text-white font-display tracking-widest uppercase px-4 py-2 rounded">
+      Start new season
+    </button>
+  </form>
+</section>
+
 <section class="scoreboard p-4">
   <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-3">Recompute</h2>
   <div class="grid sm:grid-cols-2 gap-3">

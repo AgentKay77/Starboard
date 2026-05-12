@@ -152,16 +152,26 @@ def recompute_all_ratings(conn: sqlite3.Connection) -> None:
     UTC's tomorrow — doesn't penalise everyone as "absent" on a day
     that hasn't happened yet.
     """
-    from starboard import clock
+    from starboard import clock, seasons
 
     today_iso = clock.local_today().isoformat()
+    season_id = seasons.get_current_id(conn)
 
     cur = conn.cursor()
-    cur.execute("DELETE FROM rating_history")
+    # Wipe only the rating history that belongs to the current season's
+    # puzzle days. Past seasons' rating_history rows stay so the archive
+    # browser can replay them.
+    cur.execute(
+        """DELETE FROM rating_history
+           WHERE day_id IN (SELECT id FROM puzzle_days WHERE season_id = ?)""",
+        (season_id,),
+    )
 
     days = cur.execute(
-        "SELECT id, date FROM puzzle_days WHERE date <= ? ORDER BY date ASC, id ASC",
-        (today_iso,),
+        """SELECT id, date FROM puzzle_days
+           WHERE date <= ? AND season_id = ?
+           ORDER BY date ASC, id ASC""",
+        (today_iso, season_id),
     ).fetchall()
     active_players = cur.execute(
         "SELECT id, joined_date FROM players WHERE active = 1"

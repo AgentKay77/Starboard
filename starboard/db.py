@@ -127,6 +127,17 @@ CREATE TABLE IF NOT EXISTS player_pauses (
 );
 CREATE INDEX IF NOT EXISTS idx_player_pauses_player ON player_pauses(player_id);
 CREATE INDEX IF NOT EXISTS idx_player_pauses_dates  ON player_pauses(start_date, end_date);
+
+CREATE TABLE IF NOT EXISTS seasons (
+    id         INTEGER PRIMARY KEY,
+    number     INTEGER NOT NULL UNIQUE,
+    started_at TEXT NOT NULL,
+    ended_at   TEXT             -- NULL while active
+);
+-- Seed a season #1 row so the DEFAULT 1 on the new season_id columns is
+-- a real foreign key target. INSERT OR IGNORE keeps the bootstrap idempotent.
+INSERT OR IGNORE INTO seasons (id, number, started_at)
+    VALUES (1, 1, '2026-01-01T00:00:00');
 """
 
 
@@ -153,6 +164,18 @@ def init_schema(conn: sqlite3.Connection) -> None:
         "submissions",
         "assisted",
         "INTEGER NOT NULL DEFAULT 0",
+    )
+    _ensure_column(
+        conn,
+        "puzzle_days",
+        "season_id",
+        "INTEGER NOT NULL DEFAULT 1",
+    )
+    _ensure_column(
+        conn,
+        "weekly_awards",
+        "season_id",
+        "INTEGER NOT NULL DEFAULT 1",
     )
 
 
