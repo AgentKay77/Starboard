@@ -22,6 +22,7 @@ from flask_login import (
     logout_user,
 )
 
+from starboard import apr, pauses
 from starboard.extensions import limiter, login_manager
 
 ph = PasswordHasher()
@@ -210,6 +211,42 @@ def account():
                     flash("Password updated.", "success")
                 except VerifyMismatchError:
                     flash("Current password is incorrect.", "error")
+        elif action == "add_pause":
+            if not current_user.player_id:
+                flash("Claim a player profile first.", "error")
+            else:
+                start = (request.form.get("start_date") or "").strip()
+                end = (request.form.get("end_date") or "").strip()
+                reason = request.form.get("reason") or ""
+                try:
+                    pauses.create(
+                        conn,
+                        player_id=current_user.player_id,
+                        start_date=start, end_date=end,
+                        reason=reason, created_by_user_id=current_user.id,
+                    )
+                    apr.recompute_all_ratings(conn)
+                    flash("Paused window saved; ratings recomputed.", "success")
+                except ValueError as e:
+                    flash(f"Couldn't save pause: {e}", "error")
+        elif action == "delete_pause":
+            try:
+                pause_id = int(request.form.get("pause_id"))
+            except (TypeError, ValueError):
+                flash("Missing pause id.", "error")
+            else:
+                ok = pauses.delete(
+                    conn,
+                    pause_id=pause_id,
+                    requesting_user_id=current_user.id,
+                    requesting_player_id=current_user.player_id,
+                    is_admin=current_user.is_admin,
+                )
+                if ok:
+                    apr.recompute_all_ratings(conn)
+                    flash("Pause removed; ratings recomputed.", "info")
+                else:
+                    flash("You can only remove your own pauses.", "error")
         return redirect(url_for("auth.account"))
 
     claimed_player = None
@@ -223,8 +260,13 @@ def account():
              AND p.id NOT IN (SELECT player_id FROM users WHERE player_id IS NOT NULL)
            ORDER BY p.name"""
     ).fetchall()
+    player_pauses = (
+        pauses.list_for_player(conn, current_user.player_id)
+        if current_user.player_id else []
+    )
     return render_template(
         "account.html",
         claimed_player=claimed_player,
         unclaimed=unclaimed,
+        player_pauses=player_pauses,
     )

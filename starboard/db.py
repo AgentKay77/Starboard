@@ -114,6 +114,19 @@ CREATE TABLE IF NOT EXISTS solve_theories (
 );
 
 CREATE INDEX IF NOT EXISTS idx_solve_theories_day ON solve_theories(day_id);
+
+CREATE TABLE IF NOT EXISTS player_pauses (
+    id INTEGER PRIMARY KEY,
+    player_id  INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+    start_date TEXT NOT NULL,   -- inclusive
+    end_date   TEXT NOT NULL,   -- inclusive
+    reason     TEXT,
+    created_at TEXT NOT NULL,
+    created_by_user_id INTEGER REFERENCES users(id),
+    CHECK (end_date >= start_date)
+);
+CREATE INDEX IF NOT EXISTS idx_player_pauses_player ON player_pauses(player_id);
+CREATE INDEX IF NOT EXISTS idx_player_pauses_dates  ON player_pauses(start_date, end_date);
 """
 
 

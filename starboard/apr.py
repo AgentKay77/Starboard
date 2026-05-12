@@ -167,6 +167,8 @@ def recompute_all_ratings(conn: sqlite3.Connection) -> None:
         "SELECT id, joined_date FROM players WHERE active = 1"
     ).fetchall()
 
+    from starboard import pauses
+
     current: dict[int, float] = {}
     for day_id, date_str in days:
         # Friday/Saturday/Sunday don't affect APR. Players can still submit
@@ -174,20 +176,30 @@ def recompute_all_ratings(conn: sqlite3.Connection) -> None:
         # change is applied, so absences over the weekend are also free.
         if clock.is_weekend_date(date_str):
             continue
+        paused_pids = pauses.paused_pids_for_day(conn, date_str)
         completed_rows = cur.execute(
             """SELECT player_id, time_seconds FROM submissions
                WHERE day_id = ? AND status = 'completed'""",
             (day_id,),
         ).fetchall()
-        completed = [(int(pid), float(t)) for pid, t in completed_rows]
+        # Paused players are exempt from APR — drop them from every bucket
+        # (completed/dnf/absent) before the rating math runs. Their
+        # submissions still exist on the day for H2H + activity display;
+        # they just don't contribute to rating_history.
+        completed = [
+            (int(pid), float(t)) for pid, t in completed_rows
+            if int(pid) not in paused_pids
+        ]
 
         dnf_rows = cur.execute(
             "SELECT player_id FROM submissions WHERE day_id = ? AND status = 'dnf'",
             (day_id,),
         ).fetchall()
-        dnfs = [int(r[0]) for r in dnf_rows]
+        dnfs = [int(r[0]) for r in dnf_rows if int(r[0]) not in paused_pids]
 
-        submitter_ids = {pid for pid, _ in completed} | set(dnfs)
+        submitter_ids = (
+            {pid for pid, _ in completed} | set(dnfs) | paused_pids
+        )
         absentees = [
             p["id"]
             for p in active_players

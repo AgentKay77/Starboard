@@ -16,7 +16,7 @@ from flask import (
 from flask_login import current_user, login_required
 from markupsafe import Markup
 
-from starboard import apr, clock, queries, settings as settings_mod, theories as theories_mod, weekly
+from starboard import apr, clock, pauses, queries, settings as settings_mod, theories as theories_mod, weekly
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -423,6 +423,62 @@ def recompute_one_week_form(week_start: str):
     """GET handler so closed-week warning flashes can link to a one-click
     confirmation page that POSTs the recompute."""
     return render_template("admin/recompute_week.html", week_start=week_start)
+
+
+# ---------- per-player pause windows ----------
+
+
+@admin_bp.route("/players/<int:player_id>/pauses", methods=["GET", "POST"])
+@admin_required
+def player_pauses(player_id: int):
+    from starboard.app import get_db
+
+    conn = get_db()
+    player = conn.execute(
+        "SELECT * FROM players WHERE id = ?", (player_id,)
+    ).fetchone()
+    if not player:
+        abort(404)
+
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "add":
+            start = (request.form.get("start_date") or "").strip()
+            end = (request.form.get("end_date") or "").strip()
+            reason = request.form.get("reason") or ""
+            try:
+                pauses.create(
+                    conn,
+                    player_id=player_id,
+                    start_date=start, end_date=end,
+                    reason=reason, created_by_user_id=current_user.id,
+                )
+                apr.recompute_all_ratings(conn)
+                flash("Pause window added; ratings recomputed.", "success")
+            except ValueError as e:
+                flash(f"Couldn't save pause: {e}", "error")
+        elif action == "delete":
+            try:
+                pause_id = int(request.form.get("pause_id"))
+            except (TypeError, ValueError):
+                flash("Missing pause id.", "error")
+            else:
+                pauses.delete(
+                    conn,
+                    pause_id=pause_id,
+                    requesting_user_id=current_user.id,
+                    requesting_player_id=None,
+                    is_admin=True,
+                )
+                apr.recompute_all_ratings(conn)
+                flash("Pause removed; ratings recomputed.", "info")
+        return redirect(url_for("admin.player_pauses", player_id=player_id))
+
+    return render_template(
+        "admin/player_pauses.html",
+        player=player,
+        pauses_list=pauses.list_for_player(conn, player_id),
+    )
 
 
 @admin_bp.route("/days/<int:day_id>/reset-board", methods=["POST"])

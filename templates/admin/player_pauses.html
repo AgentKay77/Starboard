@@ -1,0 +1,69 @@
+{% extends "admin/_layout.html" %}
+{% block title %}{{ player.display_name or player.name }} · Pauses{% endblock %}
+{% block content %}
+
+<header class="mb-5 flex items-baseline justify-between flex-wrap gap-3">
+  <div>
+    <h1 class="font-display text-3xl tracking-wider">{{ player.display_name or player.name }} · Pauses</h1>
+    <p class="text-slate-400 text-sm mt-1">Rating-neutral windows. APR is recomputed on every change.</p>
+  </div>
+  <a href="{{ url_for('admin.players') }}" class="bg-white/10 hover:bg-white/15 px-3 py-2 rounded text-sm">← All players</a>
+</header>
+
+<section class="scoreboard p-4 mb-6">
+  <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-3">Existing pauses</h2>
+  {% if pauses_list %}
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="border-b border-white/10 text-xs uppercase tracking-widest text-slate-400">
+          <th class="text-left py-2 px-2">Window</th>
+          <th class="text-left py-2 px-2">Reason</th>
+          <th class="text-left py-2 px-2">Added</th>
+          <th class="text-right py-2 px-2"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in pauses_list %}
+          <tr class="border-b border-white/5">
+            <td class="py-2 px-2 numeral">{{ p.start_date }} → {{ p.end_date }}</td>
+            <td class="py-2 px-2">{{ p.reason or '—' }}</td>
+            <td class="py-2 px-2 text-xs text-slate-400 numeral">{{ p.created_at[:10] }}</td>
+            <td class="py-2 px-2 text-right">
+              <form method="post" style="display: inline;">
+                <input type="hidden" name="action" value="delete" />
+                <input type="hidden" name="pause_id" value="{{ p.id }}" />
+                <button type="submit" class="bg-white/10 hover:bg-white/15 px-3 py-1 rounded text-xs">Remove</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="text-slate-400 italic">No pauses on file.</p>
+  {% endif %}
+</section>
+
+<section class="scoreboard p-4">
+  <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-3">Add a pause</h2>
+  <form method="post" class="grid sm:grid-cols-4 gap-2 items-end">
+    <input type="hidden" name="action" value="add" />
+    <label class="block text-sm">
+      <span class="text-xs text-slate-400 block mb-1">Start</span>
+      <input type="date" name="start_date" required class="w-full bg-navy-800 border border-white/10 rounded px-3 py-2 numeral" />
+    </label>
+    <label class="block text-sm">
+      <span class="text-xs text-slate-400 block mb-1">End</span>
+      <input type="date" name="end_date" required class="w-full bg-navy-800 border border-white/10 rounded px-3 py-2 numeral" />
+    </label>
+    <label class="block text-sm sm:col-span-2 flex gap-2 items-end">
+      <span class="block flex-1">
+        <span class="text-xs text-slate-400 block mb-1">Reason</span>
+        <input type="text" name="reason" maxlength="120" class="w-full bg-navy-800 border border-white/10 rounded px-3 py-2" />
+      </span>
+      <button type="submit" class="bg-accent hover:bg-red-700 text-white font-display tracking-widest uppercase px-4 py-2 rounded">Add</button>
+    </label>
+  </form>
+</section>
+
+{% endblock %}

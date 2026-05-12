@@ -419,7 +419,12 @@ def _attendance_heatmap(
     conn: sqlite3.Connection, player_id: int, joined_date: str
 ) -> list[dict]:
     """One entry per puzzle_day from joined_date forward.
-    kind ∈ {'completed','dnf','absent','unscored'}."""
+    kind ∈ {'completed','dnf','absent','unscored','paused'}.
+    Paused days override every other classification — even if the player
+    submitted a time, the day is rating-neutral so we surface that
+    explicitly."""
+    from starboard import pauses
+
     rh_rows = conn.execute(
         """SELECT pd.date, rh.kind FROM rating_history rh
            JOIN puzzle_days pd ON pd.id = rh.day_id
@@ -436,6 +441,8 @@ def _attendance_heatmap(
     ).fetchall()
     sub_by_date = {r["date"]: r["status"] for r in sub_rows}
 
+    paused_dates = pauses.paused_dates_for_player(conn, player_id)
+
     days = conn.execute(
         "SELECT date FROM puzzle_days WHERE date >= ? ORDER BY date ASC",
         (joined_date,),
@@ -443,10 +450,11 @@ def _attendance_heatmap(
     out = []
     for d in days:
         date_str = d["date"]
-        if date_str in rh_by_date:
+        if date_str in paused_dates:
+            out.append({"date": date_str, "kind": "paused"})
+        elif date_str in rh_by_date:
             out.append({"date": date_str, "kind": rh_by_date[date_str]})
         elif date_str in sub_by_date:
-            # Submitted but day was skipped (<2 completed) — no rating effect
             out.append({"date": date_str, "kind": "unscored"})
         else:
             out.append({"date": date_str, "kind": "unscored"})
