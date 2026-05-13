@@ -56,7 +56,12 @@
       <div style="padding: var(--pad-card);">
         <div class="serif fs-22" style="color: var(--accent-2)">Absent</div>
         <p class="muted fs-13" style="margin: 6px 0 0;">
-          Active player who never submitted. Forced to <span class="num">{{ '%.2f'|format(absent_floor) }}σ</span> — strictly worse than DNF, so engaging always pays.
+          Active player who never submitted. The floor escalates with
+          consecutive misses: <span class="num">−1.0σ</span> on the first,
+          <span class="num">−1.5σ</span> on the second,
+          <span class="num">−2.0σ</span> on the third,
+          <span class="num">−2.25σ</span> from the fourth onward.
+          A single bad-day-off isn't catastrophic; chronic ghosting is.
         </p>
       </div>
     </div>
@@ -69,7 +74,7 @@
       <div><span class="smallcaps">Starting APR</span><div class="num serif fs-22">{{ initial_rating }}</div></div>
       <div><span class="smallcaps">K-factor</span><div class="num serif fs-22">{{ K|round|int }}</div></div>
       <div><span class="smallcaps">Rating per σ</span><div class="num serif fs-22">{{ rating_per_sigma }}</div></div>
-      <div><span class="smallcaps">DNF / Absent floors</span><div class="num serif fs-22">{{ '%.1f'|format(dnf_floor) }}σ &nbsp;/&nbsp; {{ '%.2f'|format(absent_floor) }}σ</div></div>
+      <div><span class="smallcaps">DNF floor / Absent ramp</span><div class="num serif fs-22">{{ '%.1f'|format(dnf_floor) }}σ &nbsp;/&nbsp; −1.0σ → −2.25σ</div></div>
     </div>
   </section>
 
@@ -269,7 +274,7 @@
       </p>
       <ol style="padding-left: 22px; margin: 0; line-height: 1.7;">
         <li>
-          <strong>Attendance.</strong> Each absence costs roughly <span class="num">{{ K|round|int }}</span> × ({{ '%.2f'|format(absent_floor) }} − expected_z) APR — about <span class="num">−50</span> for a high-rated player. Five missed days = <span class="num">−250</span> APR; that hides a lot of head-to-head wins.
+          <strong>Attendance.</strong> The absent floor escalates with consecutive misses (−1.0σ on the first, ramping to −2.25σ by the fourth). For a high-rated player one missed day costs ~<span class="num">−22</span> APR, five consecutive ~<span class="num">−200</span>. Pauses sidestep this entirely.
         </li>
         <li>
           <strong>DNFs and clamped slow times.</strong> A DNF or any time below the floor costs ~<span class="num">−45</span> APR for a top player. Two of those wipe a season's worth of close wins.

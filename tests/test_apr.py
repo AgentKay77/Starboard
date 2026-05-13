@@ -329,3 +329,73 @@ def test_inactive_player_not_penalized(seeded_conn):
     ).fetchall()
     pids = {r["player_id"] for r in rows}
     assert 3 not in pids  # inactive — skipped
+
+
+# ---------- escalating absent floor ----------
+
+
+def test_absent_floor_for_streak_curve():
+    from starboard.apr import absent_floor_for_streak
+    assert absent_floor_for_streak(1) == -1.00
+    assert absent_floor_for_streak(2) == -1.50
+    assert absent_floor_for_streak(3) == -2.00
+    assert absent_floor_for_streak(4) == -2.25
+    assert absent_floor_for_streak(7) == -2.25  # caps at the legacy floor
+
+
+def test_recompute_uses_escalating_absent_floor(seeded_conn):
+    """First absent day lands a -1.0σ floor; the same player's third
+    consecutive absent day lands the full -2.25σ. Verify the deltas in
+    rating_history reflect that."""
+    from starboard import apr
+
+    # Three Mon-Wed weekdays in a row (2026-01-05 Mon, -06 Tue, -07 Wed).
+    # Player 1 (Alice) submits on all three; player 2 (Bob) is absent on
+    # all three. Player 3 (Carol) submits all three so each day has ≥ 2
+    # completions and the APR math actually runs.
+    d1 = insert_day(seeded_conn, "2026-01-05")
+    d2 = insert_day(seeded_conn, "2026-01-06")
+    d3 = insert_day(seeded_conn, "2026-01-07")
+    for d in (d1, d2, d3):
+        insert_submission(seeded_conn, 1, d, 60.0, "completed")
+        insert_submission(seeded_conn, 3, d, 80.0, "completed")
+    # Bob (id=2) is the one accumulating absences.
+
+    apr.recompute_all_ratings(seeded_conn)
+    rows = seeded_conn.execute(
+        """SELECT pd.date, rh.actual_z FROM rating_history rh
+           JOIN puzzle_days pd ON pd.id = rh.day_id
+           WHERE rh.player_id = 2 ORDER BY pd.date""",
+    ).fetchall()
+    floors = [r["actual_z"] for r in rows]
+    assert floors == [-1.0, -1.5, -2.0]
+
+
+def test_submission_resets_absent_streak(seeded_conn):
+    """A submission resets the streak so the next absent day starts at
+    the light floor again."""
+    from starboard import apr
+
+    d1 = insert_day(seeded_conn, "2026-01-05")
+    d2 = insert_day(seeded_conn, "2026-01-06")
+    d3 = insert_day(seeded_conn, "2026-01-07")
+    # Bob is absent day 1, submits day 2, absent day 3.
+    insert_submission(seeded_conn, 1, d1, 60.0, "completed")
+    insert_submission(seeded_conn, 3, d1, 80.0, "completed")
+    insert_submission(seeded_conn, 2, d2, 70.0, "completed")
+    insert_submission(seeded_conn, 1, d2, 60.0, "completed")
+    insert_submission(seeded_conn, 3, d2, 80.0, "completed")
+    insert_submission(seeded_conn, 1, d3, 60.0, "completed")
+    insert_submission(seeded_conn, 3, d3, 80.0, "completed")
+    apr.recompute_all_ratings(seeded_conn)
+    rows = seeded_conn.execute(
+        """SELECT pd.date, rh.kind, rh.actual_z FROM rating_history rh
+           JOIN puzzle_days pd ON pd.id = rh.day_id
+           WHERE rh.player_id = 2 ORDER BY pd.date""",
+    ).fetchall()
+    assert rows[0]["kind"] == "absent"
+    assert rows[0]["actual_z"] == -1.0
+    assert rows[1]["kind"] == "completed"
+    # Day 3 absent: streak reset, so floor is -1.0 again.
+    assert rows[2]["kind"] == "absent"
+    assert rows[2]["actual_z"] == -1.0
