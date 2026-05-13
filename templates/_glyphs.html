@@ -12,12 +12,13 @@
 {# Tooltip text for every trophy kind, surfaced via native `title` attrs so
    players hovering an icon learn what it means without leaving the page. #}
 {% set TROPHY_TIPS = {
-  'champion':       'Champion — highest mean z-score across the week (≥ 4 days played).',
-  'iron_man':       'Iron Man — most submissions in the week. Tiebreak: best mean z.',
-  'lightning':      'Lightning — single best z-score on any day that week.',
+  'champion':       'Champion — highest weekday mean z-score (≥ 4 days played).',
+  'iron_man':       'Iron Man — most submissions in the week, all 7 days count. Tiebreak: best mean z.',
+  'lightning':      'Lightning — single best z-score on any weekday that week.',
   'steady':         'Steady — lowest standard deviation of z-scores (consistent week, ≥ 3 days).',
   'giant_slayer':   'Giant Slayer — biggest upset by APR rating gap (≥ 200 APR).',
   'weekend_warrior':'Weekend Warrior — most wins across Fri/Sat/Sun. Tiebreak: most weekend submissions.',
+  'most_improved':  'Most Improved — biggest mean-z gain from prior week → this week (≥ 2 days both weeks).',
 } %}
 
 {% macro trophy(kind, size=18) -%}
@@ -63,6 +64,13 @@
      stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
   <path fill="currentColor" stroke="none" d="M15 4 C 9.5 4, 5.5 8, 5.5 13 C 5.5 17, 8.5 20.5, 13 21 C 9.5 19, 7.5 16, 7.5 13 C 7.5 9, 10 6, 15 4 Z"/>
   <path fill="currentColor" stroke="none" d="M18 6 L18.6 7.4 L20 8 L18.6 8.6 L18 10 L17.4 8.6 L16 8 L17.4 7.4 Z"/>
+</svg>
+{%- elif kind == 'most_improved' -%}
+{# Upward arrow growing from a flat baseline — biggest week-over-week jump. #}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none"
+     stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+  <path d="M3 19 L9 13 L13 17 L21 7"/>
+  <path d="M15 7 L21 7 L21 13"/>
 </svg>
 {%- endif %}
 </span>

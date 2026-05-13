@@ -592,6 +592,7 @@ def career_trophies(conn: sqlite3.Connection, season_id: int | None = None) -> l
                   SUM(CASE WHEN wa.award='steady'          THEN 1 ELSE 0 END) AS steady,
                   SUM(CASE WHEN wa.award='giant_slayer'    THEN 1 ELSE 0 END) AS giant_slayer,
                   SUM(CASE WHEN wa.award='weekend_warrior' THEN 1 ELSE 0 END) AS weekend_warrior,
+                  SUM(CASE WHEN wa.award='most_improved'   THEN 1 ELSE 0 END) AS most_improved,
                   COUNT(wa.id) AS total
            FROM players p
            LEFT JOIN weekly_awards wa ON wa.player_id = p.id AND wa.season_id = ?
@@ -709,6 +710,32 @@ def latest_day(conn: sqlite3.Connection, season_id: int | None = None) -> dict |
             }
         )
     winner = entries[0] if entries and entries[0]["status"] == "completed" else None
+
+    # Underdog: rating_history row for this day with the biggest gap
+    # between actual_z and expected_z — i.e. who most exceeded their own
+    # predicted performance. Skipped on weekend days where APR doesn't run.
+    underdog = None
+    underdog_row = conn.execute(
+        """SELECT rh.actual_z, rh.expected_z, rh.delta,
+                  p.id AS pid, p.name, p.display_name
+           FROM rating_history rh
+           JOIN players p ON p.id = rh.player_id
+           WHERE rh.day_id = ? AND rh.kind = 'completed'
+             AND rh.actual_z > rh.expected_z
+           ORDER BY (rh.actual_z - rh.expected_z) DESC
+           LIMIT 1""",
+        (row["id"],),
+    ).fetchone()
+    if underdog_row:
+        underdog = {
+            "player_id": underdog_row["pid"],
+            "display_name": _display(underdog_row),
+            "actual_z": underdog_row["actual_z"],
+            "expected_z": underdog_row["expected_z"],
+            "gap": underdog_row["actual_z"] - underdog_row["expected_z"],
+            "delta": underdog_row["delta"],
+        }
+
     return {
         "date": row["date"],
         "field_size": row["field_size"],
@@ -717,6 +744,7 @@ def latest_day(conn: sqlite3.Connection, season_id: int | None = None) -> dict |
         "winner_id": winner["player_id"] if winner else None,
         "winner_time": winner["time_seconds"] if winner else None,
         "winner_time_str": winner["time_str"] if winner else "—",
+        "underdog": underdog,
     }
 
 

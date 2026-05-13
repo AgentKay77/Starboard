@@ -5,11 +5,12 @@
 
 {% from "_glyphs.html" import trophy, sparkline, delta %}
 
-{% set TROPHY_KEYS = ['champion', 'iron_man', 'lightning', 'steady', 'giant_slayer', 'weekend_warrior'] %}
+{% set TROPHY_KEYS = ['champion', 'iron_man', 'lightning', 'steady',
+                      'giant_slayer', 'weekend_warrior', 'most_improved'] %}
 {% set TROPHY_LABELS = {
   'champion': 'Champion', 'iron_man': 'Iron Man', 'lightning': 'Lightning',
   'steady': 'Steady', 'giant_slayer': 'Giant Slayer',
-  'weekend_warrior': 'Weekend Warrior',
+  'weekend_warrior': 'Weekend Warrior', 'most_improved': 'Most Improved',
 } %}
 {% set total_players = profile.h2h_top5|length + 1 %}
 

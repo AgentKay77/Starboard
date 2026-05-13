@@ -5,11 +5,12 @@
 
 {% from "_glyphs.html" import trophy %}
 
-{% set TROPHY_KEYS = ['champion', 'iron_man', 'lightning', 'steady', 'giant_slayer', 'weekend_warrior'] %}
+{% set TROPHY_KEYS = ['champion', 'iron_man', 'lightning', 'steady',
+                      'giant_slayer', 'weekend_warrior', 'most_improved'] %}
 {% set TROPHY_LABELS = {
   'champion': 'Champion', 'iron_man': 'Iron Man', 'lightning': 'Lightning',
   'steady': 'Steady', 'giant_slayer': 'Giant Slayer',
-  'weekend_warrior': 'Weekend Warrior',
+  'weekend_warrior': 'Weekend Warrior', 'most_improved': 'Most Improved',
 } %}
 
 <header class="page-h">
@@ -38,10 +39,15 @@
       <span><span class="num fs-18" style="color: var(--ink)">{{ current_week.submission_count }}</span> submissions</span>
     </div>
   </div>
-  <div class="grid awards-grid" style="grid-template-columns: repeat(5, 1fr); gap: 0;">
+  {# 7 trophies wrap to a second row at narrow widths; outer borders give the
+     same visual weight as the prior single-row 5-up. #}
+  <div class="awards-grid"
+       style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+              gap: 0;">
     {% for kind in TROPHY_KEYS %}
       {% set a = current_week.awards.get(kind) %}
-      <div style="padding: var(--pad-card); {% if not loop.last %}border-right: 1px solid var(--rule);{% endif %}
+      <div style="padding: var(--pad-card); border-right: 1px solid var(--rule);
+                  border-bottom: 1px solid var(--rule);
                   min-height: 140px; display: flex; flex-direction: column; justify-content: space-between; gap: 8px;">
         <div class="row" style="gap: 10px;">
           <span style="color: {{ 'var(--ink)' if a else 'var(--ink-4)' }}">{{ trophy(kind, 18) }}</span>
@@ -53,6 +59,7 @@
             {% if kind == 'iron_man' %}{{ a.metric_value|int }} d
             {% elif kind == 'giant_slayer' %}+{{ a.metric_value|round|int }}
             {% elif kind == 'weekend_warrior' %}{{ a.metric_value|int }} wins
+            {% elif kind == 'most_improved' %}+{{ '%.2f'|format(a.metric_value) }}σ
             {% else %}{{ '%.2f'|format(a.metric_value) }}σ{% endif %}
           </div>
         {% else %}
@@ -60,6 +67,7 @@
             {% if kind == 'steady' %}needs ≥ 3 days
             {% elif kind == 'giant_slayer' %}no upset ≥ 200
             {% elif kind == 'weekend_warrior' %}no weekend submissions yet
+            {% elif kind == 'most_improved' %}no week-over-week gain yet
             {% elif kind == 'champion' %}≥ 4 days needed
             {% else %}open{% endif %}
           </div>
@@ -105,6 +113,7 @@
                     {% if k == 'iron_man' %}{{ a.metric_value|int }} d
                     {% elif k == 'giant_slayer' %}+{{ a.metric_value|round|int }}
                     {% elif k == 'weekend_warrior' %}{{ a.metric_value|int }} wins
+                    {% elif k == 'most_improved' %}+{{ '%.2f'|format(a.metric_value) }}σ
                     {% else %}{{ '%.2f'|format(a.metric_value) }}σ{% endif %}
                   </div>
                 {% else %}
@@ -159,6 +168,12 @@
 @media (max-width: 800px) {
   .awards-grid { grid-template-columns: 1fr 1fr !important; }
   .awards-grid > div { border-right: none !important; border-bottom: 1px solid var(--rule); }
+}
+@media (min-width: 801px) {
+  /* On wider screens with auto-fit columns, knock the trailing borders
+     off cells in the rightmost column / bottom row so they line up with
+     the card edge rather than doubling it. */
+  .awards-grid > div:last-child { border-right: none !important; }
 }
 </style>
 
