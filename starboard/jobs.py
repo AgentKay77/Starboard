@@ -10,7 +10,7 @@ import sys
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from starboard import db, weekly
+from starboard import db, seasons, weekly
 from starboard.config import Config
 
 
@@ -25,6 +25,12 @@ def close_last_week() -> int:
     try:
         weekly.close_week_and_lock_awards(conn, monday_last_week.isoformat())
         print(f"Locked awards for week of {monday_last_week.isoformat()}")
+        # Auto-rollover: if the current season's planned_end_date has
+        # passed, open the next one. Runs after the week close so the
+        # final week's awards land in the season they happened in.
+        rolled = seasons.auto_close_if_due(conn, today, user_id=None)
+        if rolled is not None:
+            print(f"Season auto-rollover → new season id {rolled}")
     finally:
         conn.close()
     return 0

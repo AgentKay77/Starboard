@@ -29,7 +29,12 @@
       <div class="row between muted fs-13 wrap" style="gap: 12px;">
         <span><span class="num">{{ s.days }}</span> days</span>
         <span><span class="num">{{ s.awards }}</span> awards</span>
-        <span class="num">{{ s.started_at[:10] }}{% if s.ended_at %} → {{ s.ended_at[:10] }}{% endif %}</span>
+        <span class="num">
+          {{ s.started_at[:10] }}
+          {%- if s.ended_at %} → {{ s.ended_at[:10] }}
+          {%- elif s.planned_end_date %} → planned {{ s.planned_end_date }}
+          {%- endif %}
+        </span>
       </div>
     </a>
   {% else %}

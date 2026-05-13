@@ -108,11 +108,18 @@ def create_app(config: Config | None = None) -> Flask:
         from starboard import clock as _clock
 
         local_today = _clock.local_today(app.config["WEEK_TIMEZONE"])
+        try:
+            from starboard import seasons as _seasons
+
+            cur_season = _seasons.get_current(get_db())
+        except Exception:
+            cur_season = None
         return {
             "site_name": "Starboard",
             "submissions_enabled": enabled,
             "current_year": local_today.year,
             "today_iso": local_today.isoformat(),
+            "current_season": cur_season,
         }
 
     @app.template_filter("rating")

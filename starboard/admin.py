@@ -104,18 +104,39 @@ def index():
                 flash("Pick a valid date.", "error")
         elif action == "start_new_season":
             confirm = request.form.get("confirm") or ""
+            planned_end = (request.form.get("planned_end_date") or "").strip() or None
             if confirm.strip().upper() != "NEW SEASON":
                 flash(
                     'Type "NEW SEASON" exactly to confirm — this resets standings.',
                     "error",
                 )
             else:
-                new_id = seasons.start_new(conn, user_id=current_user.id)
+                try:
+                    new_id = seasons.start_new(
+                        conn,
+                        user_id=current_user.id,
+                        planned_end_date=planned_end,
+                    )
+                    flash(
+                        f"Season opened (id={new_id}). Standings now read empty "
+                        "until the first submission of the new season lands.",
+                        "success",
+                    )
+                except ValueError as e:
+                    flash(f"Couldn't open season: {e}", "error")
+        elif action == "set_planned_end":
+            planned_end = (request.form.get("planned_end_date") or "").strip() or None
+            try:
+                seasons.set_planned_end_date(
+                    conn, seasons.get_current_id(conn), planned_end
+                )
                 flash(
-                    f"Season opened (id={new_id}). Standings now read empty "
-                    "until the first submission of the new season lands.",
+                    "Planned end date updated."
+                    + (" Auto-close disabled." if planned_end is None else ""),
                     "success",
                 )
+            except ValueError as e:
+                flash(f"Bad date: {e}", "error")
         return redirect(url_for("admin.index"))
 
     counts = {

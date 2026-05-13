@@ -177,6 +177,12 @@ def init_schema(conn: sqlite3.Connection) -> None:
         "season_id",
         "INTEGER NOT NULL DEFAULT 1",
     )
+    _ensure_column(
+        conn,
+        "seasons",
+        "planned_end_date",
+        "TEXT",
+    )
 
 
 def _ensure_column(

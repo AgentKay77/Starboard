@@ -67,8 +67,11 @@
   </main>
 
   <footer class="app-footer">
-    {{ site_name }} · Daily Stars puzzle league · {{ current_year }} ·
-    <a href="{{ url_for('public.about') }}" style="margin-left: 4px;">How APR works</a>
+    {{ site_name }} · Daily Stars puzzle league · {{ current_year }}
+    {% if current_season %}
+      · <a href="{{ url_for('public.seasons_index') }}">Season {{ current_season.number }}</a>{% if current_season.planned_end_date %} <span class="num" style="opacity: 0.7">ends {{ current_season.planned_end_date }}</span>{% endif %}
+    {% endif %}
+    · <a href="{{ url_for('public.about') }}" style="margin-left: 4px;">How APR works</a>
   </footer>
 </div>
 
