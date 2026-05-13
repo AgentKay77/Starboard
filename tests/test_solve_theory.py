@@ -488,3 +488,46 @@ def test_completed_without_method_is_rejected(app):
         assert n == 0
     finally:
         c.close()
+
+
+# ---------- Mode B: subsequent users can add stars ----------
+
+
+def test_parse_added_stars_returns_only_new():
+    size, regions, stars = _valid_8x8()
+    # Existing board has the first 14 stars; 2 are "missing".
+    existing = stars[:14]
+    full_payload = json.dumps([list(s) for s in stars])
+    added = theories.parse_added_stars(
+        full_payload,
+        existing_stars=[tuple(s) for s in existing],
+        regions=regions,
+        size=size,
+    )
+    # The 2 missing ones come back.
+    assert sorted(added) == sorted(set(stars) - set(existing))
+
+
+def test_parse_added_stars_rejects_invalid_addition():
+    """Trying to add a star adjacent to an existing one is rejected by
+    the merged-set validator."""
+    size, regions, stars = _valid_8x8()
+    existing = stars[:14]
+    # Find a cell adjacent to an existing star.
+    er, ec = existing[0]
+    bad = (er, ec + 1) if ec + 1 < size else (er, ec - 1)
+    payload = json.dumps([list(s) for s in existing] + [list(bad)])
+    with pytest.raises(theories.TheoryError, match="touch|max 2|too many"):
+        theories.parse_added_stars(
+            payload, existing_stars=[tuple(s) for s in existing],
+            regions=regions, size=size,
+        )
+
+
+def test_parse_added_stars_empty_when_no_new_coords():
+    size, regions, stars = _valid_8x8()
+    payload = json.dumps([list(s) for s in stars])
+    assert theories.parse_added_stars(
+        payload, existing_stars=[tuple(s) for s in stars],
+        regions=regions, size=size,
+    ) == []

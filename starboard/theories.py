@@ -173,6 +173,62 @@ def parse_board_payload(
     return (size, *validate_board(regions, stars, size))
 
 
+def parse_added_stars(
+    raw_stars_json: str,
+    *,
+    existing_stars: list[tuple[int, int]],
+    regions: list[list[int]],
+    size: int,
+) -> list[tuple[int, int]]:
+    """Subsequent users may add stars the first author missed.
+
+    Accepts the form's full `stars_json` (existing + new), filters out
+    coords already on the canonical board, then re-runs `validate_board`
+    on the merged set so additions can't break the puzzle's invariants
+    (touching, ≤ 2 per row/column/region, ≤ 2*size total).
+
+    Returns just the *new* stars in sorted order, or [] when the payload
+    is empty / unchanged."""
+    if not (raw_stars_json or "").strip():
+        return []
+    try:
+        raw = json.loads(raw_stars_json)
+    except (TypeError, ValueError) as e:
+        raise TheoryError(f"stars JSON: {e}") from None
+    if not isinstance(raw, list):
+        raise TheoryError("stars must be a list")
+    submitted: list[tuple[int, int]] = []
+    seen: set[tuple[int, int]] = set()
+    for s in raw:
+        if not isinstance(s, (list, tuple)) or len(s) != 2:
+            raise TheoryError(f"bad star coord: {s!r}")
+        coord = (int(s[0]), int(s[1]))
+        if coord in seen:
+            continue
+        seen.add(coord)
+        submitted.append(coord)
+    existing_set = set(existing_stars)
+    added = [c for c in submitted if c not in existing_set]
+    if not added:
+        return []
+    merged = list(existing_stars) + added
+    # validate_board enforces all the puzzle rules on the merged set.
+    _, normalized = validate_board(regions, merged, size)
+    # Return only the *new* contribution, preserving sorted normalization.
+    return [c for c in normalized if c not in existing_set]
+
+
+def update_board_stars(
+    conn: sqlite3.Connection, *, day_id: int, stars: list[tuple[int, int]]
+) -> None:
+    """Replace the stars_json for a board after a subsequent user added to
+    it. Regions and size stay locked."""
+    conn.execute(
+        "UPDATE puzzle_boards SET stars_json = ? WHERE day_id = ?",
+        (json.dumps([list(s) for s in stars]), day_id),
+    )
+
+
 def parse_pick_order(
     raw: str, board_stars: list[tuple[int, int]]
 ) -> list[tuple[int, int]]:

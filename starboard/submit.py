@@ -349,6 +349,23 @@ def _maybe_save_theory(conn, day_id: int, day_date_iso: str) -> str | None:
                     size=size, regions=regions, stars=new_stars,
                 )
                 stars = new_stars
+            else:
+                # Subsequent users can still ADD stars the first user
+                # missed. Regions are frozen; the star set grows. We re-run
+                # the puzzle validator on the merged set so additions can't
+                # violate touching / 2-per-row-col-region.
+                added = theories.parse_added_stars(
+                    request.form.get("stars_json") or "",
+                    existing_stars=stars,
+                    regions=existing_board["regions"],
+                    size=existing_board["size"],
+                )
+                if added:
+                    merged = list(stars) + added
+                    theories.update_board_stars(
+                        conn, day_id=day_id, stars=merged,
+                    )
+                    stars = merged
 
         pick_order = theories.parse_pick_order(raw_pick, stars)
         theories.upsert_theory(
