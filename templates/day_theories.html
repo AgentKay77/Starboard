@@ -5,7 +5,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='solve-theory.css') }}" />
 {% endblock %}
 
-{% macro board_grid(board, pick_order) %}
+{% macro board_grid(board, pick_order, xs=None) %}
   {% set ns = namespace(picks={}) %}
   {% if pick_order %}
     {% for s in pick_order %}
@@ -14,15 +14,18 @@
   {% endif %}
   {% set star_pairs = [] %}
   {% for s in board.stars %}{% set _ = star_pairs.append((s[0], s[1])) %}{% endfor %}
+  {% set x_pairs = [] %}
+  {% if xs %}{% for x in xs %}{% set _ = x_pairs.append((x[0], x[1])) %}{% endfor %}{% endif %}
   <div class="theory-grid" style="--cell: 32px; grid-template-columns: repeat({{ board.size }}, var(--cell));" data-mode="pick">
     {% for r in range(board.size) %}
       {% for c in range(board.size) %}
         {% set rid = board.regions[r][c] %}
         {% set is_star = (r, c) in star_pairs %}
+        {% set is_x = (r, c) in x_pairs %}
         {% set pick_idx = ns.picks.get((r, c)) %}
         {% set right_diff = c < board.size - 1 and board.regions[r][c + 1] != rid %}
         {% set below_diff = r < board.size - 1 and board.regions[r + 1][c] != rid %}
-        <div class="theory-cell theory-region-{{ rid }}{% if is_star %} has-star{% endif %}{% if pick_idx %} pick-marked{% endif %}{% if right_diff %} boundary-right{% endif %}{% if below_diff %} boundary-bottom{% endif %}{% if c == board.size - 1 %} frame-right{% endif %}{% if r == board.size - 1 %} frame-bottom{% endif %}">
+        <div class="theory-cell theory-region-{{ rid }}{% if is_star %} has-star{% endif %}{% if is_x and not is_star %} has-x{% endif %}{% if pick_idx %} pick-marked{% endif %}{% if right_diff %} boundary-right{% endif %}{% if below_diff %} boundary-bottom{% endif %}{% if c == board.size - 1 %} frame-right{% endif %}{% if r == board.size - 1 %} frame-bottom{% endif %}">
           {% if pick_idx %}<span class="pick-num">{{ pick_idx }}</span>{% endif %}
         </div>
       {% endfor %}
@@ -99,7 +102,7 @@
           </div>
         </div>
         <div class="theory-row" style="padding: var(--pad-card); display: grid; grid-template-columns: minmax(0, max-content) minmax(200px, 1fr); gap: 24px; align-items: start;">
-          {{ board_grid(board, t.pick_order) }}
+          {{ board_grid(board, t.pick_order, t.xs) }}
           <div class="muted" style="white-space: pre-wrap; line-height: 1.55; min-width: 0;">{{ t.notes or '— no notes —' }}</div>
         </div>
       </article>

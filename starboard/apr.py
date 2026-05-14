@@ -39,10 +39,10 @@ DNF_FLOOR = -2.0
 ABSENT_FLOOR = -2.25  # legacy alias — also the cap at streak ≥ 4
 
 ABSENT_FLOORS_BY_STREAK = (
-    -1.00,   # 1st consecutive absence — light
-    -1.50,   # 2nd
-    -2.00,   # 3rd
-    -2.25,   # 4th and beyond
+    -0.50,   # 1st consecutive absence — ~−11 APR for a top player
+    -1.00,   # 2nd — ~−22
+    -1.50,   # 3rd — ~−33
+    -2.25,   # 4th and beyond — full hammer, ~−50
 )
 
 

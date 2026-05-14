@@ -1,0 +1,74 @@
+{% extends "admin/_layout.html" %}
+{% block title %}Feedback · Admin{% endblock %}
+{% block content %}
+
+<header class="mb-5">
+  <a href="{{ url_for('admin.index') }}" class="text-xs text-slate-400 hover:text-white">← Admin</a>
+  <h1 class="font-display text-3xl tracking-wider">Feedback inbox</h1>
+  <p class="text-slate-400 text-sm mt-1">User-submitted bug reports and feature requests via the floating ? button.</p>
+</header>
+
+<div class="flex gap-2 mb-5 text-sm">
+  {% for s in ['open', 'triaged', 'closed', 'all'] %}
+    {% set is_active = show == s %}
+    <a href="{{ url_for('admin.feedback', status=s) }}"
+       class="px-3 py-1.5 rounded {{ 'bg-accent text-white' if is_active else 'bg-white/10 hover:bg-white/15' }}">
+      {{ s }}{% if s in counts %} <span class="text-xs">({{ counts[s] }})</span>{% endif %}
+    </a>
+  {% endfor %}
+</div>
+
+<div class="scoreboard overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="text-xs font-display tracking-widest uppercase text-slate-400">
+      <tr class="border-b border-white/10">
+        <th class="text-left px-3 py-2">When</th>
+        <th class="text-left px-3 py-2">User</th>
+        <th class="text-left px-3 py-2">Kind</th>
+        <th class="text-left px-3 py-2">Body</th>
+        <th class="text-left px-3 py-2">Where</th>
+        <th class="text-right px-3 py-2">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in feedback %}
+        <tr class="border-b border-white/5 align-top">
+          <td class="px-3 py-2 numeral text-xs text-slate-400">{{ f.created_at[:16].replace('T', ' ') }}</td>
+          <td class="px-3 py-2">{{ f.username or 'anon' }}</td>
+          <td class="px-3 py-2">
+            <span class="text-xs uppercase tracking-widest
+              {% if f.kind == 'bug' %}text-rose-400{% elif f.kind == 'feature' %}text-emerald-400{% else %}text-slate-400{% endif %}">
+              {{ f.kind }}
+            </span>
+          </td>
+          <td class="px-3 py-2" style="white-space: pre-wrap; max-width: 480px;">{{ f.body }}</td>
+          <td class="px-3 py-2 text-xs text-slate-400">
+            {% if f.page_url %}<a href="{{ f.page_url }}" class="hover:underline">{{ f.page_url }}</a>{% endif %}
+          </td>
+          <td class="px-3 py-2 text-right">
+            <form method="post" class="inline">
+              <input type="hidden" name="action" value="set_status" />
+              <input type="hidden" name="feedback_id" value="{{ f.id }}" />
+              <select name="status" onchange="this.form.submit()"
+                      class="bg-navy-800 border border-white/10 rounded px-2 py-1 text-xs">
+                {% for s in ['open', 'triaged', 'closed'] %}
+                  <option value="{{ s }}" {% if f.status == s %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+              </select>
+            </form>
+            <form method="post" class="inline">
+              <input type="hidden" name="action" value="delete" />
+              <input type="hidden" name="feedback_id" value="{{ f.id }}" />
+              <button type="submit" class="text-xs text-rose-400 hover:underline ml-2"
+                      onclick="return confirm('Delete this feedback?');">delete</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="px-3 py-6 text-center text-slate-400 italic">Nothing in this bucket.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

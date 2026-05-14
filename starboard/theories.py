@@ -229,6 +229,39 @@ def update_board_stars(
     )
 
 
+def parse_xs(
+    raw: str, board_stars: list[tuple[int, int]], size: int
+) -> list[tuple[int, int]]:
+    """X marks — cells the user has deduced *can't* hold a star. Per-user
+    annotation, not part of the canonical board. Must be in-bounds,
+    distinct, and never overlap a star on the canonical board (placing an
+    X on a known star is contradictory)."""
+    if not (raw or "").strip():
+        return []
+    try:
+        items = json.loads(raw)
+    except (TypeError, ValueError) as e:
+        raise TheoryError(f"xs JSON: {e}") from None
+    if not isinstance(items, list):
+        raise TheoryError("xs must be a list")
+    star_set = set(board_stars)
+    seen: set[tuple[int, int]] = set()
+    out: list[tuple[int, int]] = []
+    for x in items:
+        if not isinstance(x, (list, tuple)) or len(x) != 2:
+            raise TheoryError(f"bad X coord: {x!r}")
+        coord = (int(x[0]), int(x[1]))
+        if not (0 <= coord[0] < size and 0 <= coord[1] < size):
+            raise TheoryError(f"X {coord} out of bounds")
+        if coord in star_set:
+            raise TheoryError(f"can't X a known star at {coord}")
+        if coord in seen:
+            continue
+        seen.add(coord)
+        out.append(coord)
+    return out
+
+
 def parse_pick_order(
     raw: str, board_stars: list[tuple[int, int]]
 ) -> list[tuple[int, int]]:
@@ -297,6 +330,8 @@ def get_theories_for_day(
     for r in rows:
         d = dict(r)
         d["pick_order"] = [tuple(s) for s in json.loads(d.pop("pick_order_json"))]
+        xs_raw = d.pop("xs_json", None)
+        d["xs"] = [tuple(s) for s in (json.loads(xs_raw) if xs_raw else [])]
         d["author_label"] = (
             d["display_name"] or d["name"] or d["username"]
         )
@@ -372,18 +407,21 @@ def upsert_theory(
     user_id: int,
     pick_order: list[tuple[int, int]],
     notes: str | None,
+    xs: list[tuple[int, int]] | None = None,
 ) -> None:
     pick_json = json.dumps([list(s) for s in pick_order])
+    xs_json = json.dumps([list(s) for s in (xs or [])]) if xs else None
     now = _now()
     conn.execute(
         """INSERT INTO solve_theories
-               (day_id, user_id, pick_order_json, notes, created_at)
-           VALUES (?, ?, ?, ?, ?)
+               (day_id, user_id, pick_order_json, notes, created_at, xs_json)
+           VALUES (?, ?, ?, ?, ?, ?)
            ON CONFLICT(user_id, day_id) DO UPDATE SET
                pick_order_json = excluded.pick_order_json,
                notes = excluded.notes,
+               xs_json = excluded.xs_json,
                created_at = excluded.created_at""",
-        (day_id, user_id, pick_json, notes, now),
+        (day_id, user_id, pick_json, notes, now, xs_json),
     )
 
 

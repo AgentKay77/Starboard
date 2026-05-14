@@ -66,6 +66,9 @@
     {% block content %}{% endblock %}
   </main>
 
+  <a class="feedback-button" href="{{ url_for('public.feedback') }}?from={{ request.path|urlencode }}"
+     title="Send feedback — bug or feature request" aria-label="Send feedback">?</a>
+
   <footer class="app-footer">
     {{ site_name }} · Daily Stars puzzle league · {{ current_year }}
     {% if current_season %}

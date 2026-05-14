@@ -126,6 +126,7 @@
         <input type="hidden" name="regions_json" data-regions />
         <input type="hidden" name="stars_json"   data-stars />
         <input type="hidden" name="pick_order_json" data-pick />
+        <input type="hidden" name="xs_json" data-xs />
       </div>
     </fieldset>
 
@@ -166,6 +167,79 @@
   sync();
 })();
 </script>
+
+<script>
+// Form-state persistence: keep typed values across a failed POST →
+// redirect → reload. sessionStorage clears on tab close so a stale draft
+// doesn't haunt next week's submission.
+(function () {
+  const form = document.getElementById('submit-form');
+  if (!form) return;
+  const KEY = 'starboard.submit.draft.v1';
+
+  function fieldsToSave() {
+    // Don't persist solve-theory grid state (JSON is rebuilt by the
+    // widget) or the X-marks payload — the widget owns that lifecycle.
+    return Array.from(form.elements).filter((el) => {
+      if (!el.name) return false;
+      if (el.type === 'submit' || el.type === 'button') return false;
+      if (['regions_json', 'stars_json', 'pick_order_json', 'xs_json'].includes(el.name)) return false;
+      return true;
+    });
+  }
+
+  function restore() {
+    let snap;
+    try { snap = JSON.parse(sessionStorage.getItem(KEY) || 'null'); }
+    catch (_) { snap = null; }
+    if (!snap) return;
+    fieldsToSave().forEach((el) => {
+      const v = snap[el.name];
+      if (v === undefined) return;
+      if (el.type === 'radio' || el.type === 'checkbox') {
+        // Each radio/checkbox shares a name; v is the value of the
+        // chosen one (or true/false for checkboxes).
+        if (el.type === 'checkbox') el.checked = v === true || v === el.value;
+        else el.checked = (String(v) === el.value);
+      } else {
+        el.value = v;
+      }
+    });
+    // Surface the restore so the user knows their typed data is back.
+    if (snap.__has_data) {
+      const note = document.createElement('div');
+      note.className = 'flash info';
+      note.style.margin = '0 0 16px';
+      note.textContent = 'Recovered your last typed values.';
+      form.parentNode.insertBefore(note, form);
+    }
+  }
+
+  function save() {
+    const snap = { __has_data: true };
+    fieldsToSave().forEach((el) => {
+      if (el.type === 'radio') {
+        if (el.checked) snap[el.name] = el.value;
+      } else if (el.type === 'checkbox') {
+        snap[el.name] = el.checked;
+      } else {
+        snap[el.name] = el.value;
+      }
+    });
+    try { sessionStorage.setItem(KEY, JSON.stringify(snap)); } catch (_) {}
+  }
+
+  // Restore on load; save on every input change. We intentionally
+  // *don't* clear on the form's submit event — if the server bounces
+  // back with a validation error, the redirect lands on /submit again
+  // and we want the typed values to repopulate. sessionStorage clears
+  // automatically on tab close, so the draft can't outlive the day.
+  restore();
+  form.addEventListener('input', save);
+  form.addEventListener('change', save);
+})();
+</script>
+
 <script src="{{ url_for('static', filename='solve-theory.js') }}" defer></script>
 
 {% endblock %}

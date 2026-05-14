@@ -4,7 +4,10 @@ from __future__ import annotations
 import math
 from datetime import date
 
-from flask import Blueprint, Flask, abort, current_app, g, render_template
+from flask import (
+    Blueprint, Flask, abort, current_app, flash, g, redirect,
+    render_template, request, url_for,
+)
 from flask_login import current_user
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -255,6 +258,46 @@ def season_archive(season_id: int):
         career=queries.career_trophies(conn, season_id=season_id),
         records=queries.records(conn, season_id=season_id),
         stats=queries.total_stats(conn, season_id=season_id),
+    )
+
+
+@public_bp.route("/feedback", methods=["GET", "POST"])
+def feedback():
+    """Catch-all bug / feature request inbox, accessible from the
+    floating ? button on every page. Anonymous submissions allowed —
+    we capture user_id when the user is signed in."""
+    from datetime import datetime, timezone
+
+    conn = get_db()
+    if request.method == "POST":
+        kind = (request.form.get("kind") or "").strip().lower()
+        if kind not in ("feature", "bug", "other"):
+            flash("Pick a kind: feature, bug, or other.", "error")
+            return redirect(url_for("public.feedback"))
+        body = (request.form.get("body") or "").strip()
+        if not body or len(body) > 4000:
+            flash("Tell us what's up — 1 to 4000 characters.", "error")
+            return redirect(url_for("public.feedback"))
+        page_url = (request.form.get("page_url") or "").strip()[:500] or None
+        ua = (request.headers.get("User-Agent") or "")[:500] or None
+        uid = current_user.id if current_user.is_authenticated else None
+        conn.execute(
+            """INSERT INTO feedback
+                   (user_id, kind, body, page_url, user_agent, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                uid, kind, body, page_url, ua,
+                datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            ),
+        )
+        conn.commit()
+        flash("Thanks — Hunter sees these on the admin dashboard.", "success")
+        return redirect(page_url or url_for("public.home"))
+    # GET: render the form. page_url is passed as a query param from the
+    # floating button so we record where they were when they hit it.
+    return render_template(
+        "feedback.html",
+        page_url=request.args.get("from", "") or url_for("public.home"),
     )
 
 

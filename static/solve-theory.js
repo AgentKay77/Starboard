@@ -34,6 +34,9 @@
     ? new Set(existing.stars.map((s) => `${s[0]},${s[1]}`))
     : new Set();
   let pickOrder = []; // list of "r,c" strings
+  // Per-user X marks — deductions ("can't be a star"). Stored on the
+  // user's solve_theories row, not on the canonical board.
+  let xs = new Set();
   let tool = existing && !canEditBoard ? 'pick' : 'paint:0';
 
   const grid = panel.querySelector('[data-grid]');
@@ -43,6 +46,7 @@
   const regionsField = panel.querySelector('[data-regions]');
   const starsField = panel.querySelector('[data-stars]');
   const pickField = panel.querySelector('[data-pick]');
+  const xsField = panel.querySelector('[data-xs]');
   const form = document.getElementById('submit-form');
 
   toggle.addEventListener('change', () => {
@@ -97,6 +101,7 @@
     if (c === size - 1) classes.push('frame-right');
     if (r === size - 1) classes.push('frame-bottom');
     if (hasStar) classes.push('has-star');
+    if (xs.has(`${r},${c}`) && !hasStar) classes.push('has-x');
     if (pickIdx >= 0) classes.push('pick-marked');
     div.className = classes.join(' ');
 
@@ -162,6 +167,17 @@
     if (tool === 'star') star.dataset.active = '1';
     star.addEventListener('click', () => { tool = 'star'; render(); });
     tools.appendChild(star);
+
+    // ✗ X tool — per-user "this cell can't be a star" deduction. Doesn't
+    // touch the canonical board; saved to the user's solve_theories row.
+    const xBtn = document.createElement('button');
+    xBtn.type = 'button';
+    xBtn.className = 'theory-tool';
+    xBtn.dataset.kind = 'x';
+    xBtn.textContent = '✗ X';
+    if (tool === 'x') xBtn.dataset.active = '1';
+    xBtn.addEventListener('click', () => { tool = 'x'; render(); });
+    tools.appendChild(xBtn);
 
     if (stars.length > 0) {
       const pick = document.createElement('button');
@@ -270,9 +286,19 @@
         stars = stars.filter((s) => s[0] !== r || s[1] !== c);
         pickOrder = pickOrder.filter((k) => k !== key);
       } else {
+        // Placing a star clears any X on the same cell.
+        xs.delete(key);
         stars.push([r, c]);
       }
       render();
+    } else if (tool === 'x') {
+      // X marks "can't be a star". Disallowed on a star (clearly *can*
+      // be one — it IS one).
+      if (starSet.has(key)) return;
+      if (xs.has(key)) xs.delete(key);
+      else xs.add(key);
+      refreshCellAndNeighbors(r, c);
+      updateHint();
     } else if (tool === 'pick') {
       if (!starSet.has(key)) return;
       const idx = pickOrder.indexOf(key);
@@ -309,6 +335,9 @@
       hint.textContent =
         `Place up to ${2 * size} stars (no two touching). Tap to toggle. ` +
         `Currently placed: ${stars.length}. Partial placements are fine — only mark stars you're confident about.`;
+    } else if (tool === 'x') {
+      hint.textContent =
+        `X marks cells that can't be a star. Personal deduction notes — saved with your theory, not part of the canonical board. Currently: ${xs.size}.`;
     } else if (tool === 'pick') {
       hint.textContent = `Tap stars in pick order. ${pickOrder.length}/${stars.length} marked.`;
     } else {
@@ -391,6 +420,11 @@
         ? stars.map((s) => `${s[0]},${s[1]}`)
         : pickOrder;
       pickField.value = JSON.stringify(fallback.map((k) => k.split(',').map((n) => parseInt(n, 10))));
+      if (xsField) {
+        xsField.value = JSON.stringify(
+          Array.from(xs).map((k) => k.split(',').map((n) => parseInt(n, 10)))
+        );
+      }
     });
   }
 
