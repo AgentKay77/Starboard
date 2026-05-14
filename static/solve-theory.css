@@ -13,33 +13,58 @@
   font-size: 12px; line-height: 1; user-select: none;
 }
 .theory-tool[data-active="1"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.theory-tool[data-full="1"]:not([data-active="1"]) {
+  /* Region whose cell count is already exactly size — render in a quieter
+     state so the user can see which regions still need attention. */
+  opacity: 0.7;
+}
+.theory-tool[data-full="1"]::after {
+  content: '✓';
+  margin-left: 4px; font-size: 11px;
+  color: var(--good);
+}
+.theory-tool[data-active="1"][data-full="1"]::after { color: var(--bg); }
 .theory-tool .swatch {
   width: 14px; height: 14px; border-radius: 3px; display: inline-block;
   border: 1px solid rgba(0, 0, 0, 0.15);
 }
 
-/* Region color palette — N + 1 colors (we cap N at 10).  Warm-celestial
-   spectrum so it stays in the design family. */
-.theory-region-0  { background: #d8b56a; }
-.theory-region-1  { background: #c97f6a; }
-.theory-region-2  { background: #a3b88a; }
-.theory-region-3  { background: #88a8b9; }
-.theory-region-4  { background: #b58cb1; }
-.theory-region-5  { background: #d3a279; }
-.theory-region-6  { background: #8aa97c; }
-.theory-region-7  { background: #c69f87; }
-.theory-region-8  { background: #9b95c2; }
-.theory-region-9  { background: #b8aa72; }
+/* Region color palette — one per region, distinct enough on warm cream
+   that adjacent stripes are obviously different.  N=10 max.
+   .theory-cell.theory-region-N (specificity 0,2,0) so the cell rule's
+   bg-2 default never wins the cascade against a painted region. */
+.theory-cell.theory-region-0  { background: #d99a3d; }
+.theory-cell.theory-region-1  { background: #c2553f; }
+.theory-cell.theory-region-2  { background: #6a8f4a; }
+.theory-cell.theory-region-3  { background: #4a7aa3; }
+.theory-cell.theory-region-4  { background: #8d5fa6; }
+.theory-cell.theory-region-5  { background: #d97a55; }
+.theory-cell.theory-region-6  { background: #4f8a6e; }
+.theory-cell.theory-region-7  { background: #b06b41; }
+.theory-cell.theory-region-8  { background: #6a64a8; }
+.theory-cell.theory-region-9  { background: #97883d; }
+/* Tool-button swatches still use the bare class — they're not nested in
+   .theory-cell, so specificity isn't an issue and we want the same color. */
+.theory-tool .swatch.theory-region-0  { background: #d99a3d; }
+.theory-tool .swatch.theory-region-1  { background: #c2553f; }
+.theory-tool .swatch.theory-region-2  { background: #6a8f4a; }
+.theory-tool .swatch.theory-region-3  { background: #4a7aa3; }
+.theory-tool .swatch.theory-region-4  { background: #8d5fa6; }
+.theory-tool .swatch.theory-region-5  { background: #d97a55; }
+.theory-tool .swatch.theory-region-6  { background: #4f8a6e; }
+.theory-tool .swatch.theory-region-7  { background: #b06b41; }
+.theory-tool .swatch.theory-region-8  { background: #6a64a8; }
+.theory-tool .swatch.theory-region-9  { background: #97883d; }
 
 .theory-grid-wrap { overflow-x: auto; padding: 4px; }
 .theory-grid {
   display: grid; gap: 0;
   margin: 0 auto; width: max-content;
   --cell: 36px;
-  /* Outer frame is heavy ink — same weight as the cross-region boundaries
-     the cells themselves draw, so the border looks continuous. */
-  border-top: 2px solid var(--ink);
-  border-left: 2px solid var(--ink);
+  /* Outer frame matches the cross-region boundary weight so the border
+     reads as continuous around irregular shapes that touch the edge. */
+  border-top: 3px solid var(--ink);
+  border-left: 3px solid var(--ink);
   /* Drag-paint: keep the browser from interpreting touch swipes as scrolls
      so finger drags reach our pointer handlers cleanly. */
   touch-action: none;
@@ -49,31 +74,35 @@
   display: flex; align-items: center; justify-content: center;
   position: relative; cursor: pointer;
   background: var(--bg-2);
-  /* Hairline rule between same-region cells. Cross-region boundaries
-     overwrite this with .boundary-* classes set during render. */
-  border-right: 1px solid var(--rule);
-  border-bottom: 1px solid var(--rule);
+  /* Same-region hairlines: dark enough to read on both warm-cream
+     unpainted cells and on the saturated region colours. The previous
+     var(--rule) value (14% ink) disappeared on coloured backgrounds. */
+  border-right: 1px solid rgba(0, 0, 0, 0.35);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.35);
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
   font-size: 14px; line-height: 1;
   user-select: none; -webkit-tap-highlight-color: transparent;
   touch-action: none;
 }
-.theory-cell.boundary-right  { border-right:  2px solid var(--ink); }
-.theory-cell.boundary-bottom { border-bottom: 2px solid var(--ink); }
-/* Cells in the rightmost column / bottom row that aren't already a
-   cross-region boundary still need the heavy outer frame. */
-.theory-cell.frame-right  { border-right:  2px solid var(--ink); }
-.theory-cell.frame-bottom { border-bottom: 2px solid var(--ink); }
+/* Heavy region boundary — 3px so the contrast against the 1px hairline
+   between same-region cells is unmistakable. */
+.theory-cell.boundary-right  { border-right:  3px solid var(--ink); }
+.theory-cell.boundary-bottom { border-bottom: 3px solid var(--ink); }
+/* Cells on the rightmost column / bottom row that aren't already a
+   cross-region boundary still need the heavy outer frame to match. */
+.theory-cell.frame-right  { border-right:  3px solid var(--ink); }
+.theory-cell.frame-bottom { border-bottom: 3px solid var(--ink); }
 
 /* Unpainted sentinel — the first user starts here on every cell, so a
-   tap with a region tool gives clear visible feedback. */
+   tap with a region tool gives clear visible feedback.  Specificity 0,2,0
+   matches the painted-region rules so source order isn't load-bearing. */
 .theory-cell.theory-region-unpainted {
   background:
     repeating-linear-gradient(
       45deg,
       var(--bg-2) 0 6px,
-      color-mix(in oklab, var(--ink) 6%, var(--bg-2)) 6px 12px
+      color-mix(in oklab, var(--ink) 8%, var(--bg-2)) 6px 12px
     );
 }
 .theory-cell.has-star::before {

@@ -145,10 +145,17 @@
           {% endfor %}
         </tbody>
       </table>
-      <div class="row between muted fs-13" style="padding: 12px var(--pad-card); border-top: 1px solid var(--rule-soft);">
+      <div class="row between muted fs-13 wrap" style="padding: 12px var(--pad-card); border-top: 1px solid var(--rule-soft); gap: 12px;">
         <span>Field of {{ latest_day.field_size }}</span>
         {% if latest_day.winner_name %}
           <span>Won by <a href="{{ url_for('public.player_view', player_id=latest_day.winner_id) }}">{{ latest_day.winner_name }}</a></span>
+        {% endif %}
+        {% if latest_day.underdog %}
+          <span title="Beat their own APR-expected performance by the largest margin">
+            Underdog:
+            <a href="{{ url_for('public.player_view', player_id=latest_day.underdog.player_id) }}">{{ latest_day.underdog.display_name }}</a>
+            <span class="num" style="color: var(--good); margin-left: 4px;">+{{ '%.2f'|format(latest_day.underdog.gap) }}σ over expected</span>
+          </span>
         {% endif %}
       </div>
     {% else %}

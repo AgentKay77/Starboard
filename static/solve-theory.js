@@ -25,7 +25,14 @@
   const UNPAINTED = -1;
   let size = existing ? existing.size : (sizeChoices[sizeChoices.length - 1] || 10);
   let regions = existing ? cloneGrid(existing.regions) : freshGrid(size, UNPAINTED);
+  // `stars` is the live merged set the UI works with — existing canonical
+  // stars PLUS anything the current user has added in this session.
+  // `canonicalStars` is a frozen snapshot so we can disallow removing
+  // stars somebody else placed.
   let stars = existing ? existing.stars.map((s) => [s[0], s[1]]) : [];
+  const canonicalStars = existing
+    ? new Set(existing.stars.map((s) => `${s[0]},${s[1]}`))
+    : new Set();
   let pickOrder = []; // list of "r,c" strings
   let tool = existing && !canEditBoard ? 'pick' : 'paint:0';
 
@@ -130,20 +137,31 @@
         btn.type = 'button';
         btn.className = 'theory-tool';
         btn.dataset.kind = `paint:${i}`;
-        btn.innerHTML = `<span class="swatch theory-region-${i}"></span>R${i + 1}`;
+        const ct = countCellsInRegion(i);
+        btn.innerHTML =
+          `<span class="swatch theory-region-${i}"></span>` +
+          `R${i + 1}` +
+          (ct > 0
+            ? ` <span class="ct" style="opacity: 0.7; font-size: 11px; margin-left: 2px;">${ct}</span>`
+            : '');
+        if (ct >= 2) btn.dataset.full = '1';
         if (tool === `paint:${i}`) btn.dataset.active = '1';
         btn.addEventListener('click', () => { tool = `paint:${i}`; render(); });
         tools.appendChild(btn);
       }
-      const star = document.createElement('button');
-      star.type = 'button';
-      star.className = 'theory-tool';
-      star.dataset.kind = 'star';
-      star.textContent = '★ Star';
-      if (tool === 'star') star.dataset.active = '1';
-      star.addEventListener('click', () => { tool = 'star'; render(); });
-      tools.appendChild(star);
     }
+
+    // ★ Star tool is available in BOTH modes. Mode A: place every star
+    // yourself. Mode B: add stars the first author left out (canonical
+    // ones are protected from removal).
+    const star = document.createElement('button');
+    star.type = 'button';
+    star.className = 'theory-tool';
+    star.dataset.kind = 'star';
+    star.textContent = '★ Star';
+    if (tool === 'star') star.dataset.active = '1';
+    star.addEventListener('click', () => { tool = 'star'; render(); });
+    tools.appendChild(star);
 
     if (stars.length > 0) {
       const pick = document.createElement('button');
@@ -244,13 +262,16 @@
     const starSet = new Set(stars.map((s) => s.join(',')));
     if (tool === 'star') {
       if (starSet.has(key)) {
+        if (canonicalStars.has(key)) {
+          // Don't let users remove stars somebody else placed —
+          // protected as part of the canonical board.
+          return;
+        }
         stars = stars.filter((s) => s[0] !== r || s[1] !== c);
         pickOrder = pickOrder.filter((k) => k !== key);
       } else {
         stars.push([r, c]);
       }
-      // Star toggle reshapes which tools are available (pick-order tool
-      // appears once any star is placed) so do a full re-render here.
       render();
     } else if (tool === 'pick') {
       if (!starSet.has(key)) return;
@@ -265,9 +286,16 @@
 
   function updateHint() {
     if (existing && !canEditBoard) {
-      hint.textContent =
-        `Tap stars in the order you spotted them. ${pickOrder.length}/${stars.length} marked. ` +
-        'Partial sequences are fine.';
+      if (tool === 'star') {
+        hint.textContent =
+          `Add stars the first player missed. Canonical stars (from the original ` +
+          `board) are protected — you can only remove ones you placed yourself. ` +
+          `Total on board: ${stars.length} / ${2 * size}.`;
+      } else {
+        hint.textContent =
+          `Tap stars in the order you spotted them. ${pickOrder.length}/${stars.length} marked. ` +
+          `Partial sequences are fine.`;
+      }
       return;
     }
     const unpaintedCount = countUnpainted();
@@ -275,10 +303,12 @@
       const regionIdx = parseInt(tool.split(':')[1], 10);
       const ownCount = countCellsInRegion(regionIdx);
       hint.textContent =
-        `Painting region ${regionIdx + 1} (${ownCount}/${size} cells). ` +
-        `${unpaintedCount} cell(s) unpainted. Drag to fill.`;
+        `Painting region ${regionIdx + 1} (${ownCount} cell${ownCount === 1 ? '' : 's'}). ` +
+        `${unpaintedCount} cell(s) unpainted. Drag to fill — region size can vary.`;
     } else if (tool === 'star') {
-      hint.textContent = `Place ${2 * size} stars total. Tap to toggle. Currently placed: ${stars.length}.`;
+      hint.textContent =
+        `Place up to ${2 * size} stars (no two touching). Tap to toggle. ` +
+        `Currently placed: ${stars.length}. Partial placements are fine — only mark stars you're confident about.`;
     } else if (tool === 'pick') {
       hint.textContent = `Tap stars in pick order. ${pickOrder.length}/${stars.length} marked.`;
     } else {
@@ -315,14 +345,44 @@
           );
           return;
         }
-        if (stars.length !== 2 * size) {
+        // Every region 0..size-1 must be used at least twice (a region
+        // with one cell can't hold two non-touching stars). Cell counts
+        // can otherwise vary — Stars puzzles ship with irregular regions.
+        const tally = new Array(size).fill(0);
+        for (let r = 0; r < size; r++)
+          for (let c = 0; c < size; c++) tally[regions[r][c]]++;
+        const missing = [];
+        const tooSmall = [];
+        for (let i = 0; i < size; i++) {
+          if (tally[i] === 0) missing.push(`R${i + 1}`);
+          else if (tally[i] < 2) tooSmall.push(`R${i + 1} has ${tally[i]} cell`);
+        }
+        if (missing.length) {
           e.preventDefault();
           alert(
-            `Solve theory: place exactly ${2 * size} stars (currently ${stars.length}). ` +
-            `Use the ★ Star tool, or untick "Solve Theory" to skip.`
+            `Solve theory: every region must be painted. Missing: ${missing.join(', ')}. ` +
+            `Pick that color and paint at least 2 cells with it.`
           );
           return;
         }
+        if (tooSmall.length) {
+          e.preventDefault();
+          alert(
+            `Solve theory: each region needs at least 2 cells (to fit two non-touching stars). ` +
+            `Too small: ${tooSmall.join('; ')}.`
+          );
+          return;
+        }
+        if (stars.length > 2 * size) {
+          e.preventDefault();
+          alert(
+            `Solve theory: too many stars (${stars.length}). The puzzle has ` +
+            `at most ${2 * size}. Remove some with the ★ Star tool.`
+          );
+          return;
+        }
+        // Partial placements are fine — Hunter wants players to log what
+        // they actually spotted, not be forced into a full 2N grid.
       }
       regionsField.value = JSON.stringify(regions);
       const sortedStars = stars.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Season {{ season.number }}{% endblock %}
+{% block content %}
+
+{% from "_glyphs.html" import mag_star, delta %}
+{% set TROPHY_KEYS = ['champion', 'iron_man', 'lightning', 'steady', 'giant_slayer', 'weekend_warrior'] %}
+
+<header class="page-h">
+  <div>
+    <span class="smallcaps">Archive · read-only</span>
+    <h1 class="serif">Season #{{ season.number }}</h1>
+    <p>
+      <span class="num">{{ season.started_at[:10] }}</span>
+      {% if season.ended_at %}→ <span class="num">{{ season.ended_at[:10] }}</span>{% else %}— current{% endif %}
+      &nbsp;·&nbsp;
+      <span class="num">{{ stats.total_days }}</span> days,
+      <span class="num">{{ stats.total_submissions }}</span> completions.
+    </p>
+  </div>
+  <a href="{{ url_for('public.seasons_index') }}" class="btn">← All seasons</a>
+</header>
+
+<div class="stack stack-32">
+
+<section>
+  <div class="sec-h"><h2>Final standings</h2></div>
+  <div class="card flush">
+    <table class="std">
+      <thead>
+        <tr>
+          <th style="width: 50px">#</th>
+          <th>Player</th>
+          <th class="ralign">Rating</th>
+          <th class="ralign hidden-sm">Trophies</th>
+          <th class="ralign hidden-sm">Att.</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in standings %}
+          <tr>
+            <td><span class="num serif fs-22"
+                style="color: {% if r.rank == 1 %}var(--accent){% elif r.rank <= 3 %}var(--ink){% else %}var(--ink-3){% endif %}">{{ '%02d'|format(r.rank) }}</span></td>
+            <td><a href="{{ url_for('public.player_view', player_id=r.player_id) }}">{{ r.display_name }}</a></td>
+            <td class="ralign num fs-16">{{ r.rating|rating }}</td>
+            <td class="ralign num muted hidden-sm">{{ r.trophies or '—' }}</td>
+            <td class="ralign num muted hidden-sm">{{ r.attendance|pct }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5" class="center muted serif-it" style="padding: 32px;">No standings recorded for this season.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+</div>
+
+{% endblock %}

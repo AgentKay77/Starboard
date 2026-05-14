@@ -212,17 +212,19 @@ def test_giant_slayer_no_upset_when_higher_rated_wins():
 
 
 def test_giant_slayer_tiebreak_more_recent_date():
-    """Two equal-gap upsets on different days → most recent wins."""
+    """Two equal-gap upsets on different days → most recent weekday wins.
+    (Fri-Sun are excluded from giant-slayer eligibility under the
+    weekend-rating-skip rule introduced for Weekend Warrior.)"""
     subs = {
-        "2026-01-05": [(1, 50.0), (2, 60.0)],  # earlier
-        "2026-01-09": [(3, 50.0), (4, 60.0)],  # later
+        "2026-01-05": [(1, 50.0), (2, 60.0)],  # Monday
+        "2026-01-08": [(3, 50.0), (4, 60.0)],  # Thursday — most recent weekday
     }
     ratings = {1: 1300, 2: 1700, 3: 1300, 4: 1700}  # both gaps = 400
     awards = compute_weekly_awards(WEEK_START, WEEK_END, subs, ratings)
     gs = _award(awards, GIANT_SLAYER)
     assert gs is not None
     detail = json.loads(gs["metric_detail"])
-    assert detail["date"] == "2026-01-09"
+    assert detail["date"] == "2026-01-08"
 
 
 def test_unknown_player_defaults_to_initial_rating():
@@ -395,3 +397,59 @@ def test_recompute_week_overwrites(week_seeded):
 def test_week_start_must_be_monday(week_seeded):
     with pytest.raises(ValueError):
         close_week_and_lock_awards(week_seeded, "2026-01-06")  # Tuesday
+
+
+# ---------- Iron Man counts all 7 days ----------
+
+
+def test_iron_man_includes_weekend_submissions():
+    """Hunter's call: showing up on Fri/Sat/Sun should count toward
+    Iron Man even though those days don't affect APR."""
+    subs = {
+        "2026-01-05": [(1, 60.0), (2, 60.0)],  # Mon — both
+        "2026-01-09": [(1, 60.0), (2, 60.0)],  # Fri — weekend
+        "2026-01-10": [(1, 60.0)],             # Sat — only player 1
+        "2026-01-11": [(1, 60.0)],             # Sun — only player 1
+    }
+    awards = compute_weekly_awards(WEEK_START, WEEK_END, subs, {1: 1500, 2: 1500})
+    im = _award(awards, IRON_MAN)
+    assert im is not None
+    # Player 1 has 4 submissions (Mon, Fri, Sat, Sun); player 2 has 2.
+    assert im["player_id"] == 1
+    assert im["metric_value"] == 4.0
+
+
+# ---------- Most Improved ----------
+
+
+def test_most_improved_picks_biggest_z_gain():
+    from starboard.weekly import _most_improved, MOST_IMPROVED
+
+    # Prior week: player 1 averages z=0, player 2 averages z=+1.
+    prior = {
+        "2025-12-29": [(1, 60.0), (2, 50.0)],  # p2 wins → +z, p1 -z
+        "2025-12-30": [(1, 60.0), (2, 50.0)],
+        "2025-12-31": [(1, 60.0), (2, 50.0)],
+    }
+    # This week: player 1 jumps to z=+1, player 2 drops to z=-1.
+    now = {
+        "2026-01-05": [(1, 50.0), (2, 60.0)],
+        "2026-01-06": [(1, 50.0), (2, 60.0)],
+        "2026-01-07": [(1, 50.0), (2, 60.0)],
+    }
+    out = _most_improved(now, prior)
+    assert len(out) == 1
+    assert out[0]["award"] == MOST_IMPROVED
+    assert out[0]["player_id"] == 1  # biggest positive delta
+    assert out[0]["metric_value"] > 0
+
+
+def test_most_improved_requires_two_days_each_week():
+    from starboard.weekly import _most_improved
+
+    prior = {"2025-12-29": [(1, 60.0), (2, 50.0)]}  # only 1 day
+    now = {
+        "2026-01-05": [(1, 50.0), (2, 60.0)],
+        "2026-01-06": [(1, 50.0), (2, 60.0)],
+    }
+    assert _most_improved(now, prior) == []

@@ -68,6 +68,24 @@ def create_app(config: Config | None = None) -> Flask:
         if c is not None:
             c.close()
 
+    @app.after_request
+    def _no_cache_dynamic(resp):
+        """Cloudflare in front of the tunnel happily caches HTML responses
+        that don't say otherwise — that's why the latest-day leaderboard
+        was showing yesterday's submissions. Tell the edge (and the
+        browser) not to cache anything that isn't a static asset.
+        Static files keep Flask's default cacheable headers."""
+        from flask import request
+
+        if request.path.startswith("/static/"):
+            return resp
+        # Cookie-bearing responses (login/signup flows etc.) must already
+        # be private; harden the rest of the dynamic surface too.
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp
+
     @app.errorhandler(403)
     def _forbidden(_e):
         return render_template("403.html"), 403
@@ -90,11 +108,18 @@ def create_app(config: Config | None = None) -> Flask:
         from starboard import clock as _clock
 
         local_today = _clock.local_today(app.config["WEEK_TIMEZONE"])
+        try:
+            from starboard import seasons as _seasons
+
+            cur_season = _seasons.get_current(get_db())
+        except Exception:
+            cur_season = None
         return {
             "site_name": "Starboard",
             "submissions_enabled": enabled,
             "current_year": local_today.year,
             "today_iso": local_today.isoformat(),
+            "current_season": cur_season,
         }
 
     @app.template_filter("rating")
@@ -187,6 +212,50 @@ def h2h_view():
 @public_bp.route("/records")
 def records_view():
     return render_template("records.html", records=queries.records(get_db()))
+
+
+@public_bp.route("/seasons")
+def seasons_index():
+    """List all past + current seasons with a small summary card each."""
+    from starboard import seasons as seasons_mod
+
+    conn = get_db()
+    all_seasons = seasons_mod.list_all(conn)
+    current_id = seasons_mod.get_current_id(conn)
+    summaries = []
+    for s in all_seasons:
+        sid = s["id"]
+        days = conn.execute(
+            "SELECT COUNT(*) FROM puzzle_days WHERE season_id = ?", (sid,)
+        ).fetchone()[0]
+        awards = conn.execute(
+            "SELECT COUNT(*) FROM weekly_awards WHERE season_id = ?", (sid,)
+        ).fetchone()[0]
+        summaries.append(
+            {**s, "is_current": sid == current_id, "days": days, "awards": awards}
+        )
+    return render_template("seasons_index.html", seasons=summaries)
+
+
+@public_bp.route("/seasons/<int:season_id>")
+def season_archive(season_id: int):
+    """Read-only final standings + career trophies + records for a past
+    (or current) season."""
+    conn = get_db()
+    row = conn.execute(
+        "SELECT * FROM seasons WHERE id = ?", (season_id,)
+    ).fetchone()
+    if not row:
+        abort(404)
+    return render_template(
+        "season_archive.html",
+        season=dict(row),
+        standings=queries.standings(conn, season_id=season_id),
+        weeks=queries.weekly_history(conn, season_id=season_id),
+        career=queries.career_trophies(conn, season_id=season_id),
+        records=queries.records(conn, season_id=season_id),
+        stats=queries.total_stats(conn, season_id=season_id),
+    )
 
 
 @public_bp.route("/about")

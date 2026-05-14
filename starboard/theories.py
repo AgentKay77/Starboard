@@ -53,7 +53,10 @@ def validate_board(
                     f"regions[{r}][{c}] = {val!r}, must be int in [0,{size})"
                 )
 
-    # Each region has exactly `size` cells.
+    # Every region 0..size-1 must be used. Cell counts can vary — Stars
+    # puzzles ship with irregular regions, the only requirement is that
+    # each region holds exactly two stars (enforced below). A region needs
+    # at least 2 cells to fit those two non-touching stars.
     counts: dict[int, int] = {}
     for row in regions:
         for v in row:
@@ -64,12 +67,13 @@ def validate_board(
             f"got {sorted(counts.keys())}"
         )
     for rid in range(size):
-        if counts[rid] != size:
+        if counts[rid] < 2:
             raise TheoryError(
-                f"region {rid} has {counts[rid]} cells, expected {size}"
+                f"region {rid} has {counts[rid]} cell(s); "
+                "needs at least 2 to fit two non-touching stars"
             )
 
-    # 4-connectivity per region.
+    # 4-connectivity per region (each region is one contiguous blob).
     for rid in range(size):
         cells = [
             (r, c) for r in range(size) for c in range(size) if regions[r][c] == rid
@@ -86,10 +90,15 @@ def validate_board(
                 ):
                     seen.add((nr, nc))
                     q.append((nr, nc))
-        if len(seen) != size:
+        if len(seen) != counts[rid]:
             raise TheoryError(f"region {rid} is not 4-connected")
 
-    # Stars: list of (r,c), distinct, exactly 2*size, in bounds.
+    # Stars: list of (r,c), distinct, in bounds. Count is flexible so a
+    # user submitting a partial solve theory ("here are the stars I'm
+    # confident about") isn't forced to commit to a full 2N placement.
+    # The hard puzzle invariants — no touching, at-most-2 per row / column
+    # / region — are still enforced so a malformed theory can't poison the
+    # canonical board.
     star_set: set[tuple[int, int]] = set()
     for s in stars:
         if (
@@ -103,12 +112,13 @@ def validate_board(
         if (r, c) in star_set:
             raise TheoryError(f"duplicate star at ({r},{c})")
         star_set.add((r, c))
-    if len(star_set) != 2 * size:
+    if len(star_set) > 2 * size:
         raise TheoryError(
-            f"need exactly {2 * size} stars, got {len(star_set)}"
+            f"too many stars: {len(star_set)} (max {2 * size})"
         )
 
-    # 8-neighbour non-adjacency.
+    # 8-neighbour non-adjacency — always enforced; touching stars violate
+    # the puzzle rules whether the placement is complete or not.
     for r, c in star_set:
         for dr in (-1, 0, 1):
             for dc in (-1, 0, 1):
@@ -119,7 +129,8 @@ def validate_board(
                         f"stars touch at ({r},{c}) and ({r+dr},{c+dc})"
                     )
 
-    # Two stars per row, column, region.
+    # At most two stars per row / column / region. Partial placements can
+    # have fewer; over-placements are flatly invalid.
     rows = [0] * size
     cols = [0] * size
     regs = [0] * size
@@ -128,14 +139,14 @@ def validate_board(
         cols[c] += 1
         regs[regions[r][c]] += 1
     for i, n in enumerate(rows):
-        if n != 2:
-            raise TheoryError(f"row {i} has {n} stars, expected 2")
+        if n > 2:
+            raise TheoryError(f"row {i} has {n} stars (max 2)")
     for i, n in enumerate(cols):
-        if n != 2:
-            raise TheoryError(f"column {i} has {n} stars, expected 2")
+        if n > 2:
+            raise TheoryError(f"column {i} has {n} stars (max 2)")
     for i, n in enumerate(regs):
-        if n != 2:
-            raise TheoryError(f"region {i} has {n} stars, expected 2")
+        if n > 2:
+            raise TheoryError(f"region {i} has {n} stars (max 2)")
 
     return regions, sorted(star_set)
 
@@ -160,6 +171,62 @@ def parse_board_payload(
         raise TheoryError("stars must be a list")
     stars = [tuple(s) for s in stars_raw]
     return (size, *validate_board(regions, stars, size))
+
+
+def parse_added_stars(
+    raw_stars_json: str,
+    *,
+    existing_stars: list[tuple[int, int]],
+    regions: list[list[int]],
+    size: int,
+) -> list[tuple[int, int]]:
+    """Subsequent users may add stars the first author missed.
+
+    Accepts the form's full `stars_json` (existing + new), filters out
+    coords already on the canonical board, then re-runs `validate_board`
+    on the merged set so additions can't break the puzzle's invariants
+    (touching, ≤ 2 per row/column/region, ≤ 2*size total).
+
+    Returns just the *new* stars in sorted order, or [] when the payload
+    is empty / unchanged."""
+    if not (raw_stars_json or "").strip():
+        return []
+    try:
+        raw = json.loads(raw_stars_json)
+    except (TypeError, ValueError) as e:
+        raise TheoryError(f"stars JSON: {e}") from None
+    if not isinstance(raw, list):
+        raise TheoryError("stars must be a list")
+    submitted: list[tuple[int, int]] = []
+    seen: set[tuple[int, int]] = set()
+    for s in raw:
+        if not isinstance(s, (list, tuple)) or len(s) != 2:
+            raise TheoryError(f"bad star coord: {s!r}")
+        coord = (int(s[0]), int(s[1]))
+        if coord in seen:
+            continue
+        seen.add(coord)
+        submitted.append(coord)
+    existing_set = set(existing_stars)
+    added = [c for c in submitted if c not in existing_set]
+    if not added:
+        return []
+    merged = list(existing_stars) + added
+    # validate_board enforces all the puzzle rules on the merged set.
+    _, normalized = validate_board(regions, merged, size)
+    # Return only the *new* contribution, preserving sorted normalization.
+    return [c for c in normalized if c not in existing_set]
+
+
+def update_board_stars(
+    conn: sqlite3.Connection, *, day_id: int, stars: list[tuple[int, int]]
+) -> None:
+    """Replace the stars_json for a board after a subsequent user added to
+    it. Regions and size stay locked."""
+    conn.execute(
+        "UPDATE puzzle_boards SET stars_json = ? WHERE day_id = ?",
+        (json.dumps([list(s) for s in stars]), day_id),
+    )
 
 
 def parse_pick_order(

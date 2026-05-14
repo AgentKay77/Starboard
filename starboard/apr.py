@@ -27,22 +27,46 @@ INITIAL_RATING = 1500.0
 K = 22.0
 RATING_PER_SIGMA = 400.0
 
-# How bad can a single day get for rating purposes?
+# Catastrophic-time clamp for completed submissions.
 DNF_FLOOR = -2.0
-ABSENT_FLOOR = -2.25
+
+# Absence floor scales with consecutive missed weekday days: the first
+# unexcused absence stings a little, the second more, and so on. A single
+# bad-day-off no longer wrecks a rating; chronic ghosting still does.
+# Streak counts puzzle_days where the player was active but didn't submit
+# and wasn't paused. Resets to 0 on any submission. Weekends and pauses
+# don't touch the streak in either direction.
+ABSENT_FLOOR = -2.25  # legacy alias — also the cap at streak ≥ 4
+
+ABSENT_FLOORS_BY_STREAK = (
+    -1.00,   # 1st consecutive absence — light
+    -1.50,   # 2nd
+    -2.00,   # 3rd
+    -2.25,   # 4th and beyond
+)
+
+
+def absent_floor_for_streak(streak: int) -> float:
+    """`streak` is 1-indexed (the day-being-evaluated counts as 1)."""
+    if streak < 1:
+        return ABSENT_FLOORS_BY_STREAK[0]
+    idx = min(streak, len(ABSENT_FLOORS_BY_STREAK)) - 1
+    return ABSENT_FLOORS_BY_STREAK[idx]
 
 
 def compute_apr_update(
     completed: list[tuple[int, float]],
     dnfs: list[int],
-    absentees: list[int],
+    absentees,
     current_ratings: dict[int, float],
 ) -> tuple[dict[int, float], list[dict]]:
     """Compute one day's APR update across all three player statuses.
 
     completed:   [(player_id, time_seconds), ...]
     dnfs:        [player_id, ...] — submitted but didn't finish
-    absentees:   [player_id, ...] — active that day, never submitted
+    absentees:   either [player_id, ...] (legacy, uses ABSENT_FLOOR for
+                 everyone), or [(player_id, floor), ...] when the caller
+                 has computed a per-player floor based on streak.
     current_ratings: ratings *before* this day. Missing entries default
         to INITIAL_RATING.
 
@@ -107,10 +131,14 @@ def compute_apr_update(
             }
         )
 
-    for pid in absentees:
+    for entry in absentees:
+        if isinstance(entry, tuple):
+            pid, floor = entry
+        else:
+            pid, floor = entry, ABSENT_FLOOR
         rating_before = current_ratings.get(pid, INITIAL_RATING)
         expected_z = (rating_before - field_avg_R) / RATING_PER_SIGMA
-        delta = K * (ABSENT_FLOOR - expected_z)
+        delta = K * (floor - expected_z)
         rating_after = rating_before + delta
         new_ratings[pid] = rating_after
         history.append(
@@ -119,7 +147,7 @@ def compute_apr_update(
                 "kind": "absent",
                 "rating_before": rating_before,
                 "rating_after": rating_after,
-                "actual_z": ABSENT_FLOOR,
+                "actual_z": floor,
                 "expected_z": expected_z,
                 "delta": delta,
             }
@@ -152,46 +180,93 @@ def recompute_all_ratings(conn: sqlite3.Connection) -> None:
     UTC's tomorrow — doesn't penalise everyone as "absent" on a day
     that hasn't happened yet.
     """
-    from starboard import clock
+    from starboard import clock, seasons
 
     today_iso = clock.local_today().isoformat()
+    season_id = seasons.get_current_id(conn)
 
     cur = conn.cursor()
-    cur.execute("DELETE FROM rating_history")
+    # Wipe only the rating history that belongs to the current season's
+    # puzzle days. Past seasons' rating_history rows stay so the archive
+    # browser can replay them.
+    cur.execute(
+        """DELETE FROM rating_history
+           WHERE day_id IN (SELECT id FROM puzzle_days WHERE season_id = ?)""",
+        (season_id,),
+    )
 
     days = cur.execute(
-        "SELECT id, date FROM puzzle_days WHERE date <= ? ORDER BY date ASC, id ASC",
-        (today_iso,),
+        """SELECT id, date FROM puzzle_days
+           WHERE date <= ? AND season_id = ?
+           ORDER BY date ASC, id ASC""",
+        (today_iso, season_id),
     ).fetchall()
     active_players = cur.execute(
         "SELECT id, joined_date FROM players WHERE active = 1"
     ).fetchall()
 
+    from collections import defaultdict
+    from starboard import pauses
+
     current: dict[int, float] = {}
+    # Per-player count of consecutive weekday non-paused absences ending at
+    # the day currently being processed. Increments on each absent day, resets
+    # to 0 on any submission, untouched on pauses or weekends.
+    absent_streak: dict[int, int] = defaultdict(int)
     for day_id, date_str in days:
+        # Friday/Saturday/Sunday don't affect APR. Players can still submit
+        # — those entries count for H2H and Weekend Warrior — but no rating
+        # change is applied, so absences over the weekend are also free.
+        if clock.is_weekend_date(date_str):
+            continue
+        paused_pids = pauses.paused_pids_for_day(conn, date_str)
         completed_rows = cur.execute(
             """SELECT player_id, time_seconds FROM submissions
                WHERE day_id = ? AND status = 'completed'""",
             (day_id,),
         ).fetchall()
-        completed = [(int(pid), float(t)) for pid, t in completed_rows]
+        # Paused players are exempt from APR — drop them from every bucket
+        # (completed/dnf/absent) before the rating math runs. Their
+        # submissions still exist on the day for H2H + activity display;
+        # they just don't contribute to rating_history.
+        completed = [
+            (int(pid), float(t)) for pid, t in completed_rows
+            if int(pid) not in paused_pids
+        ]
 
         dnf_rows = cur.execute(
             "SELECT player_id FROM submissions WHERE day_id = ? AND status = 'dnf'",
             (day_id,),
         ).fetchall()
-        dnfs = [int(r[0]) for r in dnf_rows]
+        dnfs = [int(r[0]) for r in dnf_rows if int(r[0]) not in paused_pids]
 
-        submitter_ids = {pid for pid, _ in completed} | set(dnfs)
-        absentees = [
+        submitter_ids = (
+            {pid for pid, _ in completed} | set(dnfs) | paused_pids
+        )
+        absentee_pids = [
             p["id"]
             for p in active_players
             if p["joined_date"] <= date_str and p["id"] not in submitter_ids
+        ]
+        # Per-player escalating floor: this day's streak = prior + 1.
+        absentees = [
+            (pid, absent_floor_for_streak(absent_streak[pid] + 1))
+            for pid in absentee_pids
         ]
 
         new_ratings, history = compute_apr_update(
             completed, dnfs, absentees, current
         )
+
+        # Update streaks AFTER computing this day's floors. Submitters reset
+        # to 0; absentees increment; paused players keep their prior streak
+        # (frozen — they neither stepped up nor ghosted).
+        for pid, _ in completed:
+            absent_streak[pid] = 0
+        for pid in dnfs:
+            absent_streak[pid] = 0
+        for pid in absentee_pids:
+            absent_streak[pid] = absent_streak[pid] + 1
         for h in history:
             cur.execute(
                 """INSERT INTO rating_history

@@ -78,6 +78,61 @@
   </form>
 </section>
 
+<section class="scoreboard p-4 mb-6">
+  <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-3">Seasons</h2>
+  <div class="flex items-baseline justify-between flex-wrap gap-3 mb-3">
+    <div>
+      <div class="font-display text-lg">
+        Current season:
+        <span class="numeral">#{{ current_season.number }}</span>
+        <span class="text-slate-500 text-xs numeral">started {{ current_season.started_at[:10] }}</span>
+      </div>
+      <div class="text-slate-500 text-xs mt-1">
+        {% if current_season.planned_end_date %}
+          Planned to close <span class="numeral">{{ current_season.planned_end_date }}</span> — the Monday weekly-close job auto-rolls into the next season once that date passes.
+        {% else %}
+          No planned end date set. Auto-close disabled — flip seasons manually below.
+        {% endif %}
+      </div>
+    </div>
+    <a href="{{ url_for('public.seasons_index') }}"
+       class="bg-white/10 hover:bg-white/15 px-3 py-2 rounded text-sm">Browse archive</a>
+  </div>
+
+  <form method="post" class="flex gap-2 flex-wrap mb-3 pb-3 border-b border-white/10">
+    <input type="hidden" name="action" value="set_planned_end" />
+    <label class="block text-xs text-slate-400 self-end mr-1">Planned end date</label>
+    <input type="date" name="planned_end_date"
+           value="{{ current_season.planned_end_date or '' }}"
+           class="flex-1 bg-navy-800 border border-white/10 rounded px-3 py-2 numeral" />
+    <button type="submit"
+            class="bg-white/10 hover:bg-white/15 px-4 py-2 rounded text-sm">
+      Save end date
+    </button>
+  </form>
+
+  <form method="post" class="grid sm:grid-cols-4 gap-2 items-end">
+    <input type="hidden" name="action" value="start_new_season" />
+    <label class="block text-sm sm:col-span-2">
+      <span class="text-xs text-slate-400 block mb-1">Confirm</span>
+      <input type="text" name="confirm" required placeholder='Type "NEW SEASON"'
+             class="w-full bg-navy-800 border border-white/10 rounded px-3 py-2" />
+    </label>
+    <label class="block text-sm">
+      <span class="text-xs text-slate-400 block mb-1">Next planned end (defaults to +3 months)</span>
+      <input type="date" name="planned_end_date"
+             class="w-full bg-navy-800 border border-white/10 rounded px-3 py-2 numeral" />
+    </label>
+    <button type="submit"
+            class="bg-accent hover:bg-red-700 text-white font-display tracking-widest uppercase px-4 py-2 rounded">
+      Start new season
+    </button>
+  </form>
+  <div class="text-slate-500 text-xs mt-2 italic">
+    Starting a season archives current standings and resets APR to 1500 for everyone. Submissions stay in the DB; they just stop counting against the new season.
+  </div>
+</section>
+
 <section class="scoreboard p-4">
   <h2 class="font-display tracking-widest uppercase text-slate-400 text-xs mb-3">Recompute</h2>
   <div class="grid sm:grid-cols-2 gap-3">

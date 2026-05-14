@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Seasons{% endblock %}
+{% block content %}
+
+<header class="page-h">
+  <div>
+    <span class="smallcaps">Archive</span>
+    <h1 class="serif">Seasons</h1>
+    <p>Each season closes when the admin opens the next one. Standings, weekly awards, and records are preserved per-season; submissions stay in the DB but only count toward the season they were made in.</p>
+  </div>
+</header>
+
+<div class="grid grid-2" style="gap: 16px;">
+  {% for s in seasons %}
+    <a href="{{ url_for('public.season_archive', season_id=s.id) }}"
+       class="card" style="text-decoration: none;">
+      <div class="row between">
+        <div>
+          <div class="smallcaps">Season</div>
+          <div class="serif fs-36">#{{ s.number }}</div>
+        </div>
+        {% if s.is_current %}
+          <span class="pill live">Current</span>
+        {% else %}
+          <span class="smallcaps muted">Closed</span>
+        {% endif %}
+      </div>
+      <hr class="hr-soft" style="margin: 16px 0;" />
+      <div class="row between muted fs-13 wrap" style="gap: 12px;">
+        <span><span class="num">{{ s.days }}</span> days</span>
+        <span><span class="num">{{ s.awards }}</span> awards</span>
+        <span class="num">
+          {{ s.started_at[:10] }}
+          {%- if s.ended_at %} → {{ s.ended_at[:10] }}
+          {%- elif s.planned_end_date %} → planned {{ s.planned_end_date }}
+          {%- endif %}
+        </span>
+      </div>
+    </a>
+  {% else %}
+    <p class="muted serif-it">No seasons recorded yet.</p>
+  {% endfor %}
+</div>
+
+{% endblock %}

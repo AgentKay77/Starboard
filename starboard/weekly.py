@@ -32,8 +32,13 @@ IRON_MAN = "iron_man"
 LIGHTNING = "lightning"
 STEADY = "steady"
 GIANT_SLAYER = "giant_slayer"
+WEEKEND_WARRIOR = "weekend_warrior"
+MOST_IMPROVED = "most_improved"
 
-ALL_AWARDS = (CHAMPION, IRON_MAN, LIGHTNING, STEADY, GIANT_SLAYER)
+ALL_AWARDS = (
+    CHAMPION, IRON_MAN, LIGHTNING, STEADY, GIANT_SLAYER,
+    WEEKEND_WARRIOR, MOST_IMPROVED,
+)
 
 GIANT_SLAYER_MIN_GAP = 200.0
 CHAMPION_MIN_DAYS = 4
@@ -70,27 +75,135 @@ def compute_weekly_awards(
     submissions_by_day: dict[str, list[tuple[int, float | None]]],
     apr_ratings_at_week_start: dict[int, float],
 ) -> list[dict]:
-    """Return up to 5 award dicts for the week."""
-    z_by_day = _z_scores_per_day(submissions_by_day)
+    """Return up to 6 award dicts for the week.
+
+    Weekday (Mon-Thu) submissions feed Champion / Iron Man / Lightning /
+    Steady / Giant Slayer — the rating-adjacent awards. Friday-Sunday
+    submissions feed only the Weekend Warrior trophy."""
+    from starboard.clock import is_weekend_date
+
+    weekday_subs = {
+        d: subs for d, subs in submissions_by_day.items() if not is_weekend_date(d)
+    }
+    weekend_subs = {
+        d: subs for d, subs in submissions_by_day.items() if is_weekend_date(d)
+    }
+
+    z_by_day = _z_scores_per_day(weekday_subs)
 
     days_played: dict[int, int] = defaultdict(int)
-    submissions_count: dict[int, int] = defaultdict(int)
+    weekday_subs_count: dict[int, int] = defaultdict(int)
     player_zs: dict[int, list[tuple[str, float]]] = defaultdict(list)
 
-    for day, subs in submissions_by_day.items():
+    for day, subs in weekday_subs.items():
         for pid, _t in subs:
-            submissions_count[pid] += 1
+            weekday_subs_count[pid] += 1
             days_played[pid] += 1
             if day in z_by_day:
                 player_zs[pid].append((day, z_by_day[day][pid]))
 
+    # Iron Man tallies every day of the week, including Fri/Sat/Sun, so
+    # showing up on the weekend counts toward "most days played". The
+    # weekday-only z scores still drive the tiebreaker.
+    all_subs_count: dict[int, int] = defaultdict(int)
+    for day, subs in submissions_by_day.items():
+        for pid, _t in subs:
+            all_subs_count[pid] += 1
+
     awards: list[dict] = []
     awards.extend(_champion(player_zs, days_played))
-    awards.extend(_iron_man(submissions_count, player_zs))
+    awards.extend(_iron_man(all_subs_count, player_zs))
     awards.extend(_lightning(player_zs))
     awards.extend(_steady(player_zs, days_played))
-    awards.extend(_giant_slayer(submissions_by_day, apr_ratings_at_week_start))
+    awards.extend(_giant_slayer(weekday_subs, apr_ratings_at_week_start))
+    awards.extend(_weekend_warrior(weekend_subs))
     return awards
+
+
+def _most_improved(this_week_subs, prior_week_subs) -> list[dict]:
+    """Biggest weekday mean-z gain from prior week → this week.
+
+    Eligibility: ≥ 2 weekday completed/dnf days in *both* weeks, so a
+    player who took a week off and came back doesn't sweep this with a
+    huge baseline-vs-comeback delta. Tiebreak: more days played this
+    week, then lower player_id."""
+    from starboard.clock import is_weekend_date
+
+    def _weekday_z_by_pid(subs_by_day):
+        weekday = {d: subs for d, subs in subs_by_day.items() if not is_weekend_date(d)}
+        z_by_day = _z_scores_per_day(weekday)
+        out: dict[int, list[float]] = defaultdict(list)
+        days_per_pid: dict[int, int] = defaultdict(int)
+        for day, subs in weekday.items():
+            for pid, _t in subs:
+                days_per_pid[pid] += 1
+                if day in z_by_day:
+                    out[pid].append(z_by_day[day][pid])
+        return out, days_per_pid
+
+    this_z, this_days = _weekday_z_by_pid(this_week_subs)
+    prior_z, prior_days = _weekday_z_by_pid(prior_week_subs)
+
+    cands = []
+    for pid in this_z:
+        if this_days[pid] < 2 or prior_days.get(pid, 0) < 2:
+            continue
+        if not this_z[pid] or not prior_z.get(pid):
+            continue
+        mean_now = sum(this_z[pid]) / len(this_z[pid])
+        mean_prev = sum(prior_z[pid]) / len(prior_z[pid])
+        delta = mean_now - mean_prev
+        if delta <= 0:
+            continue
+        cands.append((pid, delta, this_days[pid], mean_now, mean_prev))
+    if not cands:
+        return []
+    cands.sort(key=lambda c: (-c[1], -c[2], c[0]))
+    pid, delta, days, mean_now, mean_prev = cands[0]
+    return [
+        {
+            "award": MOST_IMPROVED,
+            "player_id": pid,
+            "metric_value": delta,
+            "metric_detail": json.dumps(
+                {"prior_mean_z": mean_prev, "this_mean_z": mean_now}
+            ),
+        }
+    ]
+
+
+def _weekend_warrior(weekend_subs) -> list[dict]:
+    """Most days won across Fri/Sat/Sun. Tiebreak: most weekend submissions.
+
+    Wins = days where the player had the fastest completed time among that
+    day's completed submitters. A day with zero completions yields no win
+    for anyone (but still counts toward submissions for engagement)."""
+    wins: dict[int, int] = defaultdict(int)
+    subs_count: dict[int, int] = defaultdict(int)
+    for day, day_subs in weekend_subs.items():
+        for pid, _t in day_subs:
+            subs_count[pid] += 1
+        completed = [(pid, t) for pid, t in day_subs if t is not None]
+        if completed:
+            winner_pid = min(completed, key=lambda s: s[1])[0]
+            wins[winner_pid] += 1
+
+    pids = set(wins) | set(subs_count)
+    if not pids:
+        return []
+    cands = [(pid, wins.get(pid, 0), subs_count.get(pid, 0)) for pid in pids]
+    cands.sort(key=lambda c: (-c[1], -c[2], c[0]))
+    pid, w, s = cands[0]
+    if w == 0 and s == 0:
+        return []
+    return [
+        {
+            "award": WEEKEND_WARRIOR,
+            "player_id": pid,
+            "metric_value": float(w),
+            "metric_detail": json.dumps({"wins": w, "submissions": s}),
+        }
+    ]
 
 
 def _champion(player_zs, days_played) -> list[dict]:
@@ -225,14 +338,14 @@ def week_bounds(week_start: str) -> tuple[str, str]:
 
 
 def _load_submissions_for_week(
-    conn: sqlite3.Connection, week_start: str, week_end: str
+    conn: sqlite3.Connection, week_start: str, week_end: str, season_id: int
 ) -> dict[str, list[tuple[int, float | None]]]:
     rows = conn.execute(
         """SELECT pd.date, s.player_id, s.time_seconds, s.status
            FROM submissions s
            JOIN puzzle_days pd ON pd.id = s.day_id
-           WHERE pd.date BETWEEN ? AND ?""",
-        (week_start, week_end),
+           WHERE pd.date BETWEEN ? AND ? AND pd.season_id = ?""",
+        (week_start, week_end, season_id),
     ).fetchall()
     out: dict[str, list[tuple[int, float | None]]] = defaultdict(list)
     for d, pid, t, status in rows:
@@ -242,10 +355,25 @@ def _load_submissions_for_week(
 
 
 def close_week_and_lock_awards(conn: sqlite3.Connection, week_start: str) -> None:
+    from starboard import seasons
+
+    sid = seasons.get_current_id(conn)
     _, week_end = week_bounds(week_start)
-    submissions = _load_submissions_for_week(conn, week_start, week_end)
+    submissions = _load_submissions_for_week(conn, week_start, week_end, sid)
     apr_ratings = get_ratings_as_of(conn, week_start)
     awards = compute_weekly_awards(week_start, week_end, submissions, apr_ratings)
+
+    # Most Improved requires the prior week's z-scores; compute here so the
+    # rest of compute_weekly_awards stays pure (just one week's data in).
+    prior_start = (
+        date.fromisoformat(week_start) - timedelta(days=7)
+    ).isoformat()
+    prior_end = (
+        date.fromisoformat(week_end) - timedelta(days=7)
+    ).isoformat()
+    prior_subs = _load_submissions_for_week(conn, prior_start, prior_end, sid)
+    if prior_subs:
+        awards.extend(_most_improved(submissions, prior_subs))
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     cur = conn.cursor()
@@ -253,8 +381,8 @@ def close_week_and_lock_awards(conn: sqlite3.Connection, week_start: str) -> Non
         cur.execute(
             """INSERT OR IGNORE INTO weekly_awards
                    (week_start, week_end, award, player_id,
-                    metric_value, metric_detail, computed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    metric_value, metric_detail, computed_at, season_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 week_start,
                 week_end,
@@ -263,6 +391,7 @@ def close_week_and_lock_awards(conn: sqlite3.Connection, week_start: str) -> Non
                 a["metric_value"],
                 a["metric_detail"],
                 now,
+                sid,
             ),
         )
     conn.commit()
@@ -275,17 +404,21 @@ def recompute_week(conn: sqlite3.Connection, week_start: str) -> None:
 
 
 def recompute_all_weeks(conn: sqlite3.Connection) -> None:
-    rows = conn.execute("SELECT MIN(date), MAX(date) FROM puzzle_days").fetchone()
+    from starboard import clock, seasons
+
+    sid = seasons.get_current_id(conn)
+    rows = conn.execute(
+        "SELECT MIN(date), MAX(date) FROM puzzle_days WHERE season_id = ?",
+        (sid,),
+    ).fetchone()
     if not rows or rows[0] is None:
         return
     first = date.fromisoformat(rows[0])
     last = date.fromisoformat(rows[1])
-    from starboard import clock
-
     today = clock.local_today()
     open_week_start = today - timedelta(days=today.weekday())
     cur = first - timedelta(days=first.weekday())
-    conn.execute("DELETE FROM weekly_awards")
+    conn.execute("DELETE FROM weekly_awards WHERE season_id = ?", (sid,))
     conn.commit()
     while cur <= last:
         if cur < open_week_start:

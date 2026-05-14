@@ -49,6 +49,9 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setenv("SECRET_KEY", "x" * 40)
     monkeypatch.setenv("DATABASE_PATH", str(db_path))
     monkeypatch.setenv("ENABLE_USER_SUBMISSIONS", "false")
+    # Pin tz=UTC so date.today() in tests and clock.local_today() in the
+    # server agree, regardless of when the suite runs.
+    monkeypatch.setenv("WEEK_TIMEZONE", "UTC")
     cfg = Config.from_env()
     app = create_app(cfg)
     app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)

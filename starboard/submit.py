@@ -22,7 +22,7 @@ from flask import (
 )
 from flask_login import current_user, login_required
 
-from starboard import apr, clock, queries, settings as settings_mod, theories
+from starboard import apr, clock, queries, seasons, settings as settings_mod, theories
 
 submit_bp = Blueprint("submit", __name__)
 
@@ -73,8 +73,21 @@ def submit():
             "SELECT id, name, display_name FROM players WHERE id = ? AND active = 1",
             (current_user.player_id,),
         ).fetchall()
-        # Non-admins are locked to today.
-        min_date = today.isoformat()
+        # Non-admins can backlog any day back to their joined_date — they
+        # might have missed submitting at the time. The closed-week guard
+        # in _handle_post still blocks edits to weeks whose awards have
+        # been locked, so the rating chase stays honest.
+        joined = (
+            players[0]["joined_date"] if players and "joined_date" in players[0].keys()
+            else None
+        )
+        if not joined:
+            joined_row = conn.execute(
+                "SELECT joined_date FROM players WHERE id = ?",
+                (current_user.player_id,),
+            ).fetchone()
+            joined = joined_row["joined_date"] if joined_row else today.isoformat()
+        min_date = joined
 
     if request.method == "POST":
         return _handle_post(conn, today, earliest, players)
@@ -130,14 +143,21 @@ def _handle_post(conn, today, earliest, _players):
             )
             return redirect(url_for("submit.submit"))
     else:
-        # Non-admins: today only.
-        if the_date != today:
+        if the_date > today:
+            flash("You can't submit for a future date.", "error")
+            return redirect(url_for("submit.submit"))
+        joined_row = conn.execute(
+            "SELECT joined_date FROM players WHERE id = ?",
+            (current_user.player_id,),
+        ).fetchone()
+        if joined_row and the_date.isoformat() < joined_row["joined_date"]:
             flash(
-                "Self-submissions are only accepted for today's puzzle. "
-                "Past days are backfilled by the league admin.",
+                "You can't backlog a submission from before you joined the league.",
                 "error",
             )
             return redirect(url_for("submit.submit"))
+        # Closed weeks are still off-limits — see the awards-locked guard
+        # further down; non-admins get a clear flash there.
 
     try:
         pid = int(raw_pid)
@@ -188,7 +208,8 @@ def _handle_post(conn, today, earliest, _players):
     ).fetchone()
     if not day_row:
         cur = conn.execute(
-            "INSERT INTO puzzle_days (date) VALUES (?)", (the_date.isoformat(),)
+            "INSERT INTO puzzle_days (date, season_id) VALUES (?, ?)",
+            (the_date.isoformat(), seasons.get_current_id(conn)),
         )
         day_id = cur.lastrowid
     else:
@@ -328,6 +349,23 @@ def _maybe_save_theory(conn, day_id: int, day_date_iso: str) -> str | None:
                     size=size, regions=regions, stars=new_stars,
                 )
                 stars = new_stars
+            else:
+                # Subsequent users can still ADD stars the first user
+                # missed. Regions are frozen; the star set grows. We re-run
+                # the puzzle validator on the merged set so additions can't
+                # violate touching / 2-per-row-col-region.
+                added = theories.parse_added_stars(
+                    request.form.get("stars_json") or "",
+                    existing_stars=stars,
+                    regions=existing_board["regions"],
+                    size=existing_board["size"],
+                )
+                if added:
+                    merged = list(stars) + added
+                    theories.update_board_stars(
+                        conn, day_id=day_id, stars=merged,
+                    )
+                    stars = merged
 
         pick_order = theories.parse_pick_order(raw_pick, stars)
         theories.upsert_theory(

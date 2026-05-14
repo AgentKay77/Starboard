@@ -95,10 +95,53 @@ def test_validate_board_rejects_touching_stars():
         theories.validate_board(regions, bad_stars[:14], size)
 
 
-def test_validate_board_rejects_wrong_star_count():
+def test_validate_board_accepts_partial_stars():
+    """Partial placements are intentionally allowed — players don't need
+    to mark every star to log a solve theory."""
     size, regions, stars = _valid_8x8()
-    with pytest.raises(theories.TheoryError):
-        theories.validate_board(regions, stars[:-1], size)
+    out_regions, out_stars = theories.validate_board(regions, stars[:5], size)
+    assert len(out_stars) == 5
+
+
+def test_validate_board_rejects_too_many_stars():
+    """Over-placement (more than 2*size) is flatly invalid. The count
+    check fires before the no-touching check, so we can hand the
+    validator 17 distinct cells without arranging them carefully."""
+    size, regions, _ = _valid_8x8()
+    too_many = [(r, c) for r in range(size) for c in range(size)][: 2 * size + 1]
+    with pytest.raises(theories.TheoryError, match="too many"):
+        theories.validate_board(regions, too_many, size)
+
+
+def test_validate_board_accepts_irregular_region_sizes():
+    """Regions can have unequal cell counts — Stars puzzles ship that way.
+    The only requirement is that each region holds two non-touching stars."""
+    size, regions, stars = _valid_8x8()
+    # Reshape: move two cells from region 0's row into region 1's territory,
+    # so region 0 has 6 cells and region 1 has 10. Star placement still
+    # respects the two-per-row/col/region invariants.
+    regions = [row[:] for row in regions]
+    regions[0][6] = 1
+    regions[0][7] = 1
+    out_regions, _ = theories.validate_board(regions, stars, size)
+    assert sum(row.count(0) for row in out_regions) == 6
+    assert sum(row.count(1) for row in out_regions) == 10
+
+
+def test_validate_board_rejects_region_with_one_cell():
+    """A region with a single cell can't fit two stars."""
+    size, regions, stars = _valid_8x8()
+    regions = [row[:] for row in regions]
+    # Steal one of region 0's cells for region 0 -> region 7,
+    # leaving region 0 with 7 cells (still valid), then collapse region 0's
+    # remaining cells one by one to trigger the "needs ≥ 2" branch.
+    # Easiest: rewrite so region 0 has just one cell.
+    for r in range(size):
+        for c in range(size):
+            if regions[r][c] == 0 and not (r == 0 and c == 0):
+                regions[r][c] = 1
+    with pytest.raises(theories.TheoryError, match="needs at least 2"):
+        theories.validate_board(regions, stars, size)
 
 
 def test_parse_pick_order_accepts_partial():
@@ -136,6 +179,9 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setenv("SECRET_KEY", "x" * 40)
     monkeypatch.setenv("DATABASE_PATH", str(db_path))
     monkeypatch.setenv("ENABLE_USER_SUBMISSIONS", "true")
+    # Pin tz=UTC so date.today() in tests and clock.local_today() in the
+    # server agree, regardless of when the suite runs.
+    monkeypatch.setenv("WEEK_TIMEZONE", "UTC")
     cfg = Config.from_env()
     app = create_app(cfg)
     app.config.update(TESTING=True)
@@ -390,7 +436,7 @@ def test_assisted_solve_is_recorded_as_dnf_with_time_kept(app):
     """Honor-pledge: 'I used checks/hints' converts the time into a DNF row
     while preserving the recorded time so the player can still see it on
     their profile, and the rating system treats it as a DNF."""
-    today = clock.local_today().isoformat()
+    today = date.today().isoformat()
     with app.test_client() as cl:
         _login(cl, "alice")
         r = cl.post(
@@ -422,7 +468,7 @@ def test_assisted_solve_is_recorded_as_dnf_with_time_kept(app):
 def test_completed_without_method_is_rejected(app):
     """A completed-status submission without a method choice flashes an
     error and writes nothing — the user has to consciously pick one."""
-    today = clock.local_today().isoformat()
+    today = date.today().isoformat()
     with app.test_client() as cl:
         _login(cl, "alice")
         r = cl.post(
@@ -442,3 +488,46 @@ def test_completed_without_method_is_rejected(app):
         assert n == 0
     finally:
         c.close()
+
+
+# ---------- Mode B: subsequent users can add stars ----------
+
+
+def test_parse_added_stars_returns_only_new():
+    size, regions, stars = _valid_8x8()
+    # Existing board has the first 14 stars; 2 are "missing".
+    existing = stars[:14]
+    full_payload = json.dumps([list(s) for s in stars])
+    added = theories.parse_added_stars(
+        full_payload,
+        existing_stars=[tuple(s) for s in existing],
+        regions=regions,
+        size=size,
+    )
+    # The 2 missing ones come back.
+    assert sorted(added) == sorted(set(stars) - set(existing))
+
+
+def test_parse_added_stars_rejects_invalid_addition():
+    """Trying to add a star adjacent to an existing one is rejected by
+    the merged-set validator."""
+    size, regions, stars = _valid_8x8()
+    existing = stars[:14]
+    # Find a cell adjacent to an existing star.
+    er, ec = existing[0]
+    bad = (er, ec + 1) if ec + 1 < size else (er, ec - 1)
+    payload = json.dumps([list(s) for s in existing] + [list(bad)])
+    with pytest.raises(theories.TheoryError, match="touch|max 2|too many"):
+        theories.parse_added_stars(
+            payload, existing_stars=[tuple(s) for s in existing],
+            regions=regions, size=size,
+        )
+
+
+def test_parse_added_stars_empty_when_no_new_coords():
+    size, regions, stars = _valid_8x8()
+    payload = json.dumps([list(s) for s in stars])
+    assert theories.parse_added_stars(
+        payload, existing_stars=[tuple(s) for s in stars],
+        regions=regions, size=size,
+    ) == []

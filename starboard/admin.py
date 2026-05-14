@@ -16,7 +16,7 @@ from flask import (
 from flask_login import current_user, login_required
 from markupsafe import Markup
 
-from starboard import apr, clock, queries, settings as settings_mod, theories as theories_mod, weekly
+from starboard import apr, clock, pauses, queries, seasons, settings as settings_mod, theories as theories_mod, weekly
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -102,6 +102,41 @@ def index():
                 return redirect(url_for("admin.bulk_day", day_date=d))
             except ValueError:
                 flash("Pick a valid date.", "error")
+        elif action == "start_new_season":
+            confirm = request.form.get("confirm") or ""
+            planned_end = (request.form.get("planned_end_date") or "").strip() or None
+            if confirm.strip().upper() != "NEW SEASON":
+                flash(
+                    'Type "NEW SEASON" exactly to confirm — this resets standings.',
+                    "error",
+                )
+            else:
+                try:
+                    new_id = seasons.start_new(
+                        conn,
+                        user_id=current_user.id,
+                        planned_end_date=planned_end,
+                    )
+                    flash(
+                        f"Season opened (id={new_id}). Standings now read empty "
+                        "until the first submission of the new season lands.",
+                        "success",
+                    )
+                except ValueError as e:
+                    flash(f"Couldn't open season: {e}", "error")
+        elif action == "set_planned_end":
+            planned_end = (request.form.get("planned_end_date") or "").strip() or None
+            try:
+                seasons.set_planned_end_date(
+                    conn, seasons.get_current_id(conn), planned_end
+                )
+                flash(
+                    "Planned end date updated."
+                    + (" Auto-close disabled." if planned_end is None else ""),
+                    "success",
+                )
+            except ValueError as e:
+                flash(f"Bad date: {e}", "error")
         return redirect(url_for("admin.index"))
 
     counts = {
@@ -127,6 +162,8 @@ def index():
         counts=counts,
         user_submissions_enabled=settings_mod.submissions_enabled(conn, env_default),
         today=clock.local_today(current_app.config["WEEK_TIMEZONE"]).isoformat(),
+        current_season=seasons.get_current(conn),
+        all_seasons=seasons.list_all(conn),
     )
 
 
@@ -209,7 +246,8 @@ def days():
             try:
                 date.fromisoformat(d)
                 conn.execute(
-                    "INSERT INTO puzzle_days (date, notes) VALUES (?, ?)", (d, notes)
+                    "INSERT INTO puzzle_days (date, notes, season_id) VALUES (?, ?, ?)",
+                    (d, notes, seasons.get_current_id(conn)),
                 )
                 conn.commit()
                 flash(f"Added {d}.", "success")
@@ -425,6 +463,62 @@ def recompute_one_week_form(week_start: str):
     return render_template("admin/recompute_week.html", week_start=week_start)
 
 
+# ---------- per-player pause windows ----------
+
+
+@admin_bp.route("/players/<int:player_id>/pauses", methods=["GET", "POST"])
+@admin_required
+def player_pauses(player_id: int):
+    from starboard.app import get_db
+
+    conn = get_db()
+    player = conn.execute(
+        "SELECT * FROM players WHERE id = ?", (player_id,)
+    ).fetchone()
+    if not player:
+        abort(404)
+
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "add":
+            start = (request.form.get("start_date") or "").strip()
+            end = (request.form.get("end_date") or "").strip()
+            reason = request.form.get("reason") or ""
+            try:
+                pauses.create(
+                    conn,
+                    player_id=player_id,
+                    start_date=start, end_date=end,
+                    reason=reason, created_by_user_id=current_user.id,
+                )
+                apr.recompute_all_ratings(conn)
+                flash("Pause window added; ratings recomputed.", "success")
+            except ValueError as e:
+                flash(f"Couldn't save pause: {e}", "error")
+        elif action == "delete":
+            try:
+                pause_id = int(request.form.get("pause_id"))
+            except (TypeError, ValueError):
+                flash("Missing pause id.", "error")
+            else:
+                pauses.delete(
+                    conn,
+                    pause_id=pause_id,
+                    requesting_user_id=current_user.id,
+                    requesting_player_id=None,
+                    is_admin=True,
+                )
+                apr.recompute_all_ratings(conn)
+                flash("Pause removed; ratings recomputed.", "info")
+        return redirect(url_for("admin.player_pauses", player_id=player_id))
+
+    return render_template(
+        "admin/player_pauses.html",
+        player=player,
+        pauses_list=pauses.list_for_player(conn, player_id),
+    )
+
+
 @admin_bp.route("/days/<int:day_id>/reset-board", methods=["POST"])
 @admin_required
 def reset_board(day_id: int):
@@ -458,7 +552,8 @@ def _get_or_create_day(conn, day_date_iso: str) -> int:
     if row:
         return row["id"]
     cur = conn.execute(
-        "INSERT INTO puzzle_days (date) VALUES (?)", (day_date_iso,)
+        "INSERT INTO puzzle_days (date, season_id) VALUES (?, ?)",
+        (day_date_iso, seasons.get_current_id(conn)),
     )
     conn.commit()
     return cur.lastrowid
