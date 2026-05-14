@@ -531,3 +531,26 @@ def test_parse_added_stars_empty_when_no_new_coords():
         payload, existing_stars=[tuple(s) for s in stars],
         regions=regions, size=size,
     ) == []
+
+
+# ---------- X marks (per-user deductions) ----------
+
+
+def test_parse_xs_accepts_distinct_in_bounds():
+    out = theories.parse_xs(json.dumps([[0, 0], [3, 4]]), board_stars=[(1, 1)], size=8)
+    assert out == [(0, 0), (3, 4)]
+
+
+def test_parse_xs_rejects_overlap_with_star():
+    with pytest.raises(theories.TheoryError, match="known star"):
+        theories.parse_xs(json.dumps([[1, 1]]), board_stars=[(1, 1)], size=8)
+
+
+def test_parse_xs_rejects_out_of_bounds():
+    with pytest.raises(theories.TheoryError, match="out of bounds"):
+        theories.parse_xs(json.dumps([[9, 0]]), board_stars=[], size=8)
+
+
+def test_parse_xs_empty_returns_list():
+    assert theories.parse_xs("", board_stars=[], size=8) == []
+    assert theories.parse_xs("[]", board_stars=[], size=8) == []

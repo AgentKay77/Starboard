@@ -370,6 +370,26 @@ table.std tbody tr:hover { background: var(--bg-2); }
 }
 .h2h-legend .swatch { width: 14px; height: 14px; display: inline-block; vertical-align: middle; margin-right: 6px; }
 
+/* Floating feedback button — always visible on every page. */
+.feedback-button {
+  position: fixed; right: 18px; bottom: 18px; z-index: 40;
+  width: 44px; height: 44px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--ink); color: var(--bg);
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-size: 22px; font-weight: 500;
+  text-decoration: none;
+  box-shadow: 0 4px 12px rgba(31, 27, 22, 0.25);
+  transition: transform 0.12s, background 0.12s;
+}
+.feedback-button:hover {
+  background: var(--accent); color: var(--ink); text-decoration: none;
+  transform: scale(1.08);
+}
+@media (max-width: 700px) {
+  .feedback-button { right: 12px; bottom: 12px; width: 40px; height: 40px; }
+}
+
 /* Auth narrow column */
 .narrow { max-width: 460px; margin: 40px auto; }
 .narrow .auth-head { text-align: center; margin-bottom: 28px; display: flex; flex-direction: column; gap: 8px; }

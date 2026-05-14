@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Feedback{% endblock %}
+{% block content %}
+
+<div class="narrow">
+  <div class="auth-head">
+    <span class="smallcaps">Bug report or feature request</span>
+    <h1 class="serif">Feedback</h1>
+  </div>
+
+  <form method="post" class="card">
+    <input type="hidden" name="page_url" value="{{ page_url }}" />
+    <div class="field">
+      <span class="label">Kind</span>
+      <div class="toggle-group" style="margin-top: 8px;">
+        <label><input type="radio" name="kind" value="bug" checked /><span>Bug</span></label>
+        <label><input type="radio" name="kind" value="feature" /><span>Feature</span></label>
+        <label><input type="radio" name="kind" value="other" /><span>Other</span></label>
+      </div>
+    </div>
+    <div class="field">
+      <label for="body">What's going on?</label>
+      <textarea id="body" name="body" rows="6" maxlength="4000" required
+                placeholder="e.g. The standings page shows yesterday's leader on mobile."></textarea>
+      <span class="hint">Up to 4000 characters. {% if current_user.is_authenticated %}Submitting as <strong>{{ current_user.username }}</strong>.{% else %}Anonymous — sign in if you want Hunter to follow up.{% endif %}</span>
+    </div>
+    <button type="submit" class="btn primary lg block">Send</button>
+  </form>
+
+  <p class="center muted" style="margin-top: 18px; font-size: 13px;">
+    <a href="{{ page_url }}">← Back to where you were</a>
+  </p>
+</div>
+
+{% endblock %}

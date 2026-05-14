@@ -368,11 +368,16 @@ def _maybe_save_theory(conn, day_id: int, day_date_iso: str) -> str | None:
                     stars = merged
 
         pick_order = theories.parse_pick_order(raw_pick, stars)
+        the_size = existing_board["size"] if existing_board else size
+        xs = theories.parse_xs(
+            request.form.get("xs_json") or "", stars, the_size,
+        )
         theories.upsert_theory(
             conn,
             day_id=day_id, user_id=current_user.id,
             pick_order=pick_order,
             notes=theories.clean_notes(raw_notes),
+            xs=xs,
         )
         conn.commit()
         return "saved"

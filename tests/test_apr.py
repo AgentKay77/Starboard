@@ -336,11 +336,11 @@ def test_inactive_player_not_penalized(seeded_conn):
 
 def test_absent_floor_for_streak_curve():
     from starboard.apr import absent_floor_for_streak
-    assert absent_floor_for_streak(1) == -1.00
-    assert absent_floor_for_streak(2) == -1.50
-    assert absent_floor_for_streak(3) == -2.00
+    assert absent_floor_for_streak(1) == -0.50
+    assert absent_floor_for_streak(2) == -1.00
+    assert absent_floor_for_streak(3) == -1.50
     assert absent_floor_for_streak(4) == -2.25
-    assert absent_floor_for_streak(7) == -2.25  # caps at the legacy floor
+    assert absent_floor_for_streak(7) == -2.25  # caps at the full hammer
 
 
 def test_recompute_uses_escalating_absent_floor(seeded_conn):
@@ -368,7 +368,7 @@ def test_recompute_uses_escalating_absent_floor(seeded_conn):
            WHERE rh.player_id = 2 ORDER BY pd.date""",
     ).fetchall()
     floors = [r["actual_z"] for r in rows]
-    assert floors == [-1.0, -1.5, -2.0]
+    assert floors == [-0.5, -1.0, -1.5]
 
 
 def test_submission_resets_absent_streak(seeded_conn):
@@ -394,8 +394,8 @@ def test_submission_resets_absent_streak(seeded_conn):
            WHERE rh.player_id = 2 ORDER BY pd.date""",
     ).fetchall()
     assert rows[0]["kind"] == "absent"
-    assert rows[0]["actual_z"] == -1.0
+    assert rows[0]["actual_z"] == -0.5
     assert rows[1]["kind"] == "completed"
-    # Day 3 absent: streak reset, so floor is -1.0 again.
+    # Day 3 absent: streak reset, so floor is -0.5 again.
     assert rows[2]["kind"] == "absent"
-    assert rows[2]["actual_z"] == -1.0
+    assert rows[2]["actual_z"] == -0.5

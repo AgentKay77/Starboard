@@ -128,6 +128,20 @@ CREATE TABLE IF NOT EXISTS player_pauses (
 CREATE INDEX IF NOT EXISTS idx_player_pauses_player ON player_pauses(player_id);
 CREATE INDEX IF NOT EXISTS idx_player_pauses_dates  ON player_pauses(start_date, end_date);
 
+CREATE TABLE IF NOT EXISTS feedback (
+    id INTEGER PRIMARY KEY,
+    user_id    INTEGER REFERENCES users(id),
+    kind       TEXT NOT NULL CHECK (kind IN ('feature', 'bug', 'other')),
+    body       TEXT NOT NULL,
+    page_url   TEXT,
+    user_agent TEXT,
+    status     TEXT NOT NULL DEFAULT 'open'
+        CHECK (status IN ('open', 'triaged', 'closed')),
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_feedback_status  ON feedback(status);
+
 CREATE TABLE IF NOT EXISTS seasons (
     id         INTEGER PRIMARY KEY,
     number     INTEGER NOT NULL UNIQUE,
@@ -181,6 +195,12 @@ def init_schema(conn: sqlite3.Connection) -> None:
         conn,
         "seasons",
         "planned_end_date",
+        "TEXT",
+    )
+    _ensure_column(
+        conn,
+        "solve_theories",
+        "xs_json",
         "TEXT",
     )
 

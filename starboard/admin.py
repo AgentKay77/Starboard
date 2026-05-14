@@ -463,6 +463,58 @@ def recompute_one_week_form(week_start: str):
     return render_template("admin/recompute_week.html", week_start=week_start)
 
 
+# ---------- feedback inbox ----------
+
+
+@admin_bp.route("/feedback", methods=["GET", "POST"])
+@admin_required
+def feedback():
+    from starboard.app import get_db
+
+    conn = get_db()
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "set_status":
+            fid = int(request.form.get("feedback_id"))
+            status = request.form.get("status") or "open"
+            if status in ("open", "triaged", "closed"):
+                conn.execute(
+                    "UPDATE feedback SET status = ? WHERE id = ?",
+                    (status, fid),
+                )
+                conn.commit()
+        elif action == "delete":
+            fid = int(request.form.get("feedback_id"))
+            conn.execute("DELETE FROM feedback WHERE id = ?", (fid,))
+            conn.commit()
+        return redirect(url_for("admin.feedback"))
+
+    show = request.args.get("status", "open")
+    if show == "all":
+        rows = conn.execute(
+            """SELECT f.*, u.username FROM feedback f
+               LEFT JOIN users u ON u.id = f.user_id
+               ORDER BY f.created_at DESC"""
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """SELECT f.*, u.username FROM feedback f
+               LEFT JOIN users u ON u.id = f.user_id
+               WHERE f.status = ?
+               ORDER BY f.created_at DESC""",
+            (show,),
+        ).fetchall()
+    counts = {
+        s: conn.execute(
+            "SELECT COUNT(*) FROM feedback WHERE status = ?", (s,)
+        ).fetchone()[0]
+        for s in ("open", "triaged", "closed")
+    }
+    return render_template(
+        "admin/feedback.html", feedback=rows, counts=counts, show=show,
+    )
+
+
 # ---------- per-player pause windows ----------
 
 
